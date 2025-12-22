@@ -5,12 +5,29 @@ import { Siren, TrendingUp, AlertOctagon } from 'lucide-react';
 
 interface ZoneHudProps {
   data: DashboardSnapshot | null;
+  renewalsD5: Array<{
+    contract_id: string;
+    segurado_nome: string;
+    vendedor_id: string;
+    termino: string;
+    comissao_valor: number;
+    days_to_end: number;
+  }>;
+  renewalsD15: Array<{
+    contract_id: string;
+    segurado_nome: string;
+    vendedor_id: string;
+    termino: string;
+    comissao_valor: number;
+    days_to_end: number;
+  }>;
 }
 
-const ZoneHud: React.FC<ZoneHudProps> = ({ data }) => {
+const ZoneHud: React.FC<ZoneHudProps> = ({ data, renewalsD5, renewalsD15 }) => {
   if (!data) return <div className="animate-pulse h-full bg-param-card/50 rounded" />;
 
   const { kpis, renewals } = data;
+  const zohoBase = import.meta.env.VITE_ZOHO_CONTRACT_URL || '';
   
   // Forecast Status Logic (Anti-Panic)
   const isForecastGood = kpis.forecast_pct_meta >= 1.0;
@@ -106,9 +123,72 @@ const ZoneHud: React.FC<ZoneHudProps> = ({ data }) => {
                 </div>
                 <div className="text-right">
                     <div className="text-sm font-bold text-white">{renewals.d15.count}</div>
+                    {renewals.d15.comissao_risco > 0 && (
+                        <div className="text-[10px] text-yellow-400">R$ {renewals.d15.comissao_risco.toLocaleString('pt-BR', { maximumFractionDigits:0 })}</div>
+                    )}
                 </div>
             </div>
 
+        </div>
+      </WidgetCard>
+
+      {/* Widget D: Lista Priorizada (D-5/D-15) */}
+      <WidgetCard title="Renovações Prioritárias" className="md:col-span-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+          <div>
+            <div className="text-[10px] uppercase tracking-widest text-param-danger mb-2">D-5</div>
+            <div className="space-y-2 max-h-32 overflow-y-auto pr-2 brutal-scroll">
+              {renewalsD5.slice(0, 6).map((item) => (
+                <div key={item.contract_id} className="flex justify-between items-center border-b border-gray-800 pb-1">
+                  <div>
+                    <div className="text-white font-bold">
+                      {zohoBase ? (
+                        <a href={`${zohoBase}${item.contract_id}`} target="_blank" rel="noreferrer">
+                          {item.segurado_nome || item.contract_id}
+                        </a>
+                      ) : (
+                        item.segurado_nome || item.contract_id
+                      )}
+                    </div>
+                    <div className="text-gray-500">
+                      {item.vendedor_id} · D-{item.days_to_end}
+                    </div>
+                  </div>
+                  <div className="text-param-danger font-bold">
+                    R$ {Number(item.comissao_valor || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
+                  </div>
+                </div>
+              ))}
+              {renewalsD5.length === 0 && <div className="text-gray-600 italic">Sem críticos D-5</div>}
+            </div>
+          </div>
+          <div>
+            <div className="text-[10px] uppercase tracking-widest text-yellow-400 mb-2">D-15</div>
+            <div className="space-y-2 max-h-32 overflow-y-auto pr-2 brutal-scroll">
+              {renewalsD15.slice(0, 6).map((item) => (
+                <div key={item.contract_id} className="flex justify-between items-center border-b border-gray-800 pb-1">
+                  <div>
+                    <div className="text-white font-bold">
+                      {zohoBase ? (
+                        <a href={`${zohoBase}${item.contract_id}`} target="_blank" rel="noreferrer">
+                          {item.segurado_nome || item.contract_id}
+                        </a>
+                      ) : (
+                        item.segurado_nome || item.contract_id
+                      )}
+                    </div>
+                    <div className="text-gray-500">
+                      {item.vendedor_id} · D-{item.days_to_end}
+                    </div>
+                  </div>
+                  <div className="text-yellow-400 font-bold">
+                    R$ {Number(item.comissao_valor || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
+                  </div>
+                </div>
+              ))}
+              {renewalsD15.length === 0 && <div className="text-gray-600 italic">Sem alertas D-15</div>}
+            </div>
+          </div>
         </div>
       </WidgetCard>
     </div>

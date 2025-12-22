@@ -2,19 +2,35 @@ import React, { useEffect, useState } from 'react';
 import ZoneHud from './components/ZoneHud';
 import ZoneGame from './components/ZoneGame';
 import ZoneStrategy from './components/ZoneStrategy';
-import { fetchDashboardSnapshot } from './services/zohoService';
-import { DashboardSnapshot } from './types';
+import { fetchCrossSellSummary, fetchDashboardSnapshot, fetchRenewalList, fetchStatus } from './services/zohoService';
+import { CrossSellSummary, DashboardSnapshot, RenewalListItem, StatusResponse } from './types';
 import { Terminal, ShieldCheck } from 'lucide-react';
 
 const App: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<DashboardSnapshot | null>(null);
+  const [renewalsD5, setRenewalsD5] = useState<RenewalListItem[]>([]);
+  const [renewalsD15, setRenewalsD15] = useState<RenewalListItem[]>([]);
+  const [crossSell, setCrossSell] = useState<CrossSellSummary | null>(null);
+  const [status, setStatus] = useState<StatusResponse | null>(null);
+
+  const monthRef = new Date().toISOString().slice(0, 7);
 
   useEffect(() => {
     const loadData = async () => {
       try {
-        const snapshot = await fetchDashboardSnapshot();
+        const [snapshot, d5List, d15List, crossSellSummary, statusResponse] = await Promise.all([
+          fetchDashboardSnapshot(monthRef),
+          fetchRenewalList(5),
+          fetchRenewalList(15),
+          fetchCrossSellSummary(),
+          fetchStatus()
+        ]);
         setData(snapshot);
+        setRenewalsD5(d5List);
+        setRenewalsD15(d15List);
+        setCrossSell(crossSellSummary);
+        setStatus(statusResponse);
       } catch (e) {
         console.error("Failed to load dashboard snapshot", e);
       } finally {
@@ -23,7 +39,7 @@ const App: React.FC = () => {
     };
 
     loadData();
-  }, []);
+  }, [monthRef]);
 
   return (
     <div className="min-h-screen bg-param-bg text-param-text font-sans p-4 md:p-6 lg:p-8 overflow-hidden flex flex-col">
@@ -42,15 +58,17 @@ const App: React.FC = () => {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-4 text-xs">
-           <div className="flex items-center gap-2 px-3 py-1 bg-gray-900 rounded border border-gray-800">
-            <ShieldCheck className="w-3 h-3 text-param-success" />
-            <span className="text-gray-400">MIDDLEWARE: ACTIVE</span>
+          <div className="flex items-center gap-4 text-xs">
+            <div className={`flex items-center gap-2 px-3 py-1 rounded border ${status?.stale_data ? 'bg-red-950/40 border-red-700' : 'bg-gray-900 border-gray-800'}`}>
+              <ShieldCheck className={`w-3 h-3 ${status?.stale_data ? 'text-param-danger' : 'text-param-success'}`} />
+              <span className="text-gray-400">
+                {status?.stale_data ? 'MIDDLEWARE: STALE' : 'MIDDLEWARE: ACTIVE'}
+              </span>
+            </div>
+            <div className="text-gray-600 font-mono">
+              Cycle: {monthRef}
+            </div>
           </div>
-          <div className="text-gray-600 font-mono">
-            Cycle: 2025-12
-          </div>
-        </div>
       </header>
 
       {loading ? (
@@ -63,7 +81,7 @@ const App: React.FC = () => {
           
           {/* ZONA 1: HUD Tático (25% visual weight) */}
           <section className="flex-shrink-0 min-h-[180px]">
-            <ZoneHud data={data} />
+            <ZoneHud data={data} renewalsD5={renewalsD5} renewalsD15={renewalsD15} />
           </section>
 
           {/* ZONA 2: Arena Gamificada (40% visual weight) */}
@@ -73,7 +91,7 @@ const App: React.FC = () => {
 
           {/* ZONA 3: Inteligência Estratégica (35% visual weight) */}
           <section className="flex-shrink-0 min-h-[250px]">
-            <ZoneStrategy data={data} />
+            <ZoneStrategy data={data} crossSell={crossSell} />
           </section>
 
         </main>

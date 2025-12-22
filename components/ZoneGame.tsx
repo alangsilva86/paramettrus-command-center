@@ -86,7 +86,7 @@ const ZoneGame: React.FC<ZoneGameProps> = ({ leaderboard }) => {
         <ul className="text-xs space-y-3 text-gray-400">
             <li className="flex justify-between border-b border-gray-800 pb-2">
                 <span>Multiplicador VIDA</span>
-                <span className="text-param-primary font-bold">2.5x</span>
+                <span className="text-param-primary font-bold">2.0x</span>
             </li>
             <li className="flex justify-between border-b border-gray-800 pb-2">
                 <span>Bonus Cross-Sell</span>

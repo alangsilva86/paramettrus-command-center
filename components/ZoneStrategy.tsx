@@ -5,6 +5,17 @@ import { ResponsiveContainer, ScatterChart, Scatter, XAxis, YAxis, Tooltip, Cell
 
 interface ZoneStrategyProps {
   data: DashboardSnapshot | null;
+  crossSell: {
+    monoprodutoPct: number;
+    autoVidaCount: number;
+    autoSemVidaCount: number;
+    autoSemVida: Array<{
+      cpf_cnpj: string;
+      segurado_nome: string;
+      comissao_total: number;
+      premio_total: number;
+    }>;
+  } | null;
 }
 
 const CustomTooltip = ({ active, payload }: any) => {
@@ -22,7 +33,7 @@ const CustomTooltip = ({ active, payload }: any) => {
   return null;
 };
 
-const ZoneStrategy: React.FC<ZoneStrategyProps> = ({ data }) => {
+const ZoneStrategy: React.FC<ZoneStrategyProps> = ({ data, crossSell }) => {
   if (!data) return null;
 
   const { radar, kpis } = data;
@@ -130,6 +141,58 @@ const ZoneStrategy: React.FC<ZoneStrategyProps> = ({ data }) => {
              "Diversificar é sobreviver."
           </div>
 
+        </div>
+      </WidgetCard>
+
+      {/* Widget H: Cross-sell Radar (Auto sem Vida) */}
+      <WidgetCard title="Cross-sell (Auto sem Vida)" className="md:col-span-3">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="text-xs text-gray-400">
+            <div className="mb-2">
+              <div className="text-[10px] uppercase tracking-widest text-gray-500">Monoproduto</div>
+              <div className="text-2xl font-black text-white">
+                {Math.round((crossSell?.monoprodutoPct || 0) * 100)}%
+              </div>
+            </div>
+            <div className="mb-2">
+              <div className="text-[10px] uppercase tracking-widest text-gray-500">Auto + Vida</div>
+              <div className="text-xl font-bold text-param-success">
+                {crossSell?.autoVidaCount ?? 0}
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-widest text-gray-500">Auto sem Vida</div>
+              <div className="text-xl font-bold text-param-danger">
+                {crossSell?.autoSemVidaCount ?? 0}
+              </div>
+            </div>
+          </div>
+          <div className="md:col-span-2">
+            <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-2">
+              Prioridade por Comissão Potencial
+            </div>
+            <div className="space-y-2 max-h-40 overflow-y-auto pr-2 brutal-scroll">
+              {(crossSell?.autoSemVida || []).slice(0, 8).map((item) => (
+                <div key={item.cpf_cnpj} className="flex justify-between items-center border-b border-gray-800 pb-1 text-xs">
+                  <div>
+                    <div className="text-white font-bold">{item.segurado_nome || item.cpf_cnpj}</div>
+                    <div className="text-gray-500">{item.cpf_cnpj}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-param-accent font-bold">
+                      R$ {Number(item.comissao_total || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
+                    </div>
+                    <div className="text-gray-500 text-[10px]">
+                      Prêmio R$ {Number(item.premio_total || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {(crossSell?.autoSemVida || []).length === 0 && (
+                <div className="text-gray-600 italic">Sem lista disponível</div>
+              )}
+            </div>
+          </div>
         </div>
       </WidgetCard>
     </div>

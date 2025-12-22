@@ -69,7 +69,6 @@ export interface DashboardSnapshot {
   renewals: {
     d7: { count: number; comissao_risco: number };
     d15: { count: number; comissao_risco: number };
-    black_list_count: number; // Expired
   };
   leaderboard: LeaderboardEntry[];
   radar: {
@@ -92,4 +91,32 @@ export interface RadarProductBubble {
   comissao_pct_avg: number; // Y Axis
   premio_total: number; // Size (Z Axis)
   retencao_proxy: number; // Color context
+}
+
+export interface RenewalListItem {
+  contract_id: string;
+  segurado_nome: string;
+  vendedor_id: string;
+  termino: string;
+  comissao_valor: number;
+  days_to_end: number;
+}
+
+export interface CrossSellSummary {
+  totalCustomers: number;
+  monoprodutoPct: number;
+  autoVidaCount: number;
+  autoSemVidaCount: number;
+  autoSemVida: Array<{
+    cpf_cnpj: string;
+    segurado_nome: string;
+    comissao_total: number;
+    premio_total: number;
+  }>;
+}
+
+export interface StatusResponse {
+  status: string;
+  last_ingestion_at: string | null;
+  stale_data: boolean;
 }
