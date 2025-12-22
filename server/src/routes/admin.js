@@ -3,6 +3,7 @@ import { config } from '../config.js';
 import { query } from '../db.js';
 import { createRulesVersion } from '../services/rulesService.js';
 import { runIngestion } from '../ingest/ingestService.js';
+import { probeZohoReport } from '../ingest/zohoClient.js';
 import { logError, logInfo, logWarn } from '../utils/logger.js';
 
 const router = express.Router();
@@ -73,6 +74,21 @@ router.post('/ingest', requireAdmin, async (req, res) => {
   } catch (error) {
     logError('admin', 'Falha na ingestao manual', { error: error.message });
     res.status(502).json({ status: 'STALE_DATA', error: error.message });
+  }
+});
+
+router.get('/zoho/health', requireAdmin, async (_req, res) => {
+  try {
+    logInfo('admin', 'Probe Zoho health solicitado');
+    const probe = await probeZohoReport();
+    res.json({ status: 'ok', ...probe });
+  } catch (error) {
+    logError('admin', 'Falha no probe Zoho health', { error: error.message });
+    res.status(502).json({
+      status: 'error',
+      error: error.message,
+      code: error.code || null
+    });
   }
 });
 

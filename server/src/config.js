@@ -24,10 +24,13 @@ export const config = {
     clientId: required('ZOHO_CLIENT_ID', 'missing'),
     clientSecret: required('ZOHO_CLIENT_SECRET', 'missing'),
     refreshToken: required('ZOHO_REFRESH_TOKEN', 'missing'),
+    accountsDomain: process.env.ZOHO_ACCOUNTS_DOMAIN || 'accounts.zoho.com',
     apiDomain: process.env.ZOHO_API_DOMAIN || 'https://www.zohoapis.com',
     creatorOwner: process.env.ZOHO_CREATOR_OWNER || '',
     creatorApp: process.env.ZOHO_CREATOR_APP || 'corretora_paramettrus',
-    creatorReport: process.env.ZOHO_CREATOR_REPORT || 'Contratos_Report'
+    creatorReport: process.env.ZOHO_CREATOR_REPORT || 'Contratos_Report',
+    pageLimit: Number(process.env.ZOHO_PAGE_LIMIT || 500),
+    requestTimeoutMs: Number(process.env.ZOHO_REQUEST_TIMEOUT_MS || 30000)
   },
   ingest: {
     renewalGraceDays: Number(process.env.RENEWAL_GRACE_DAYS || 30),

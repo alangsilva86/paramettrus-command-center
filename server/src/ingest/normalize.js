@@ -64,7 +64,8 @@ export const normalizeZohoRecord = (record) => {
   const termino = toDateOnly(getField(record, config.zohoFields.termino));
   const premio = normalizeMoney(getField(record, config.zohoFields.premio));
   const comissaoValor = normalizeMoney(getField(record, config.zohoFields.comissaoValor));
-  const comissaoPct = normalizeMoney(getField(record, config.zohoFields.comissaoPct));
+  const comissaoPctRaw = normalizeMoney(getField(record, config.zohoFields.comissaoPct));
+  const comissaoPct = comissaoPctRaw !== null && comissaoPctRaw > 1 ? comissaoPctRaw / 100 : comissaoPctRaw;
 
   const { produto, ramo } = normalizeRamo(produtoRaw);
 

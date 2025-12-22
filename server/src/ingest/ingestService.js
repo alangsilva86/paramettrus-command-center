@@ -62,12 +62,12 @@ const insertRawPayload = async (client, record, fetchedAt) => {
   return payloadHash;
 };
 
-const contractExists = async (client, contractId) => {
+const getExistingRowHash = async (client, contractId) => {
   const result = await client.query(
-    'SELECT 1 FROM contracts_norm WHERE contract_id = $1 LIMIT 1',
+    'SELECT row_hash FROM contracts_norm WHERE contract_id = $1 LIMIT 1',
     [contractId]
   );
-  return result.rowCount > 0;
+  return result.rowCount > 0 ? result.rows[0].row_hash : null;
 };
 
 const rowHashExistsInMonth = async (client, rowHash, monthRef) => {
@@ -136,6 +136,63 @@ const insertNormalized = async (client, contract) => {
   );
 };
 
+const updateNormalized = async (client, contract) => {
+  const columns = [
+    'cpf_cnpj',
+    'segurado_nome',
+    'vendedor_id',
+    'produto',
+    'ramo',
+    'seguradora',
+    'cidade',
+    'data_efetivacao',
+    'inicio',
+    'termino',
+    'status',
+    'premio',
+    'comissao_pct',
+    'comissao_valor',
+    'row_hash',
+    'dedup_group',
+    'is_synthetic_id',
+    'is_incomplete',
+    'is_invalid',
+    'month_ref'
+  ];
+
+  const values = [
+    contract.cpf_cnpj,
+    contract.segurado_nome,
+    contract.vendedor_id,
+    contract.produto,
+    contract.ramo,
+    contract.seguradora,
+    contract.cidade || null,
+    contract.data_efetivacao,
+    contract.inicio,
+    contract.termino,
+    contract.status,
+    contract.premio,
+    contract.comissao_pct,
+    contract.comissao_valor,
+    contract.row_hash,
+    contract.dedup_group,
+    contract.is_synthetic_id,
+    contract.is_incomplete,
+    contract.is_invalid,
+    contract.month_ref,
+    contract.contract_id
+  ];
+
+  const assignments = columns.map((col, idx) => `${col} = $${idx + 1}`);
+  await client.query(
+    `UPDATE contracts_norm
+     SET ${assignments.join(', ')}
+     WHERE contract_id = $${columns.length + 1}`,
+    values
+  );
+};
+
 const refreshCustomers = async (client, cpfCnpjs) => {
   if (!cpfCnpjs.length) return;
   const unique = [...new Set(cpfCnpjs.filter(Boolean))];
@@ -194,21 +251,35 @@ export const runIngestion = async () => {
     let duplicatesCount = 0;
     let incompleteCount = 0;
     let invalidCount = 0;
+    let updatedNormCount = 0;
     const fetchedAt = new Date().toISOString();
     const touchedCpfs = [];
 
     let records = [];
     try {
-      records = await withRetry(() => fetchZohoReport(), 3);
+      records = await withRetry(() => fetchZohoReport(), 3, (error) => error?.code !== 'ZOHO_AUTH_401');
     } catch (error) {
-      logError('ingest', 'Zoho indisponível ou credenciais inválidas');
+      const isAuthError = error?.code === 'ZOHO_AUTH_401' || error?.status === 401;
+      const status = isAuthError ? 'FAILED' : 'STALE_DATA';
+      const diagnostic = isAuthError ? 'ZOHO_AUTH_401' : 'ZOHO_UNAVAILABLE';
+
+      logError('ingest', 'Falha ao coletar dados do Zoho', {
+        status,
+        diagnostic,
+        error: error?.message
+      });
+
       await finalizeIngestionRun(client, runId, {
-        status: 'STALE_DATA',
+        status,
         finishedAt: new Date(),
         fetchedCount,
         insertedNormCount,
         duplicatesCount,
-        error: error?.message || 'Zoho unavailable'
+        error: error?.message || 'Zoho unavailable',
+        details: {
+          diagnostic,
+          status_code: error?.status || null
+        }
       });
       throw error;
     }
@@ -228,9 +299,15 @@ export const runIngestion = async () => {
         if (normalized.is_invalid) invalidCount += 1;
 
         if (!normalized.is_synthetic_id) {
-          const exists = await contractExists(client, normalized.contract_id);
-          if (exists) {
-            duplicatesCount += 1;
+          const existingHash = await getExistingRowHash(client, normalized.contract_id);
+          if (existingHash) {
+            if (existingHash === normalized.row_hash) {
+              duplicatesCount += 1;
+              continue;
+            }
+            await updateNormalized(client, normalized);
+            updatedNormCount += 1;
+            if (normalized.cpf_cnpj) touchedCpfs.push(normalized.cpf_cnpj);
             continue;
           }
         } else {
@@ -253,6 +330,7 @@ export const runIngestion = async () => {
       }
       logSuccess('ingest', 'Ingestão concluída', {
         inserted: insertedNormCount,
+        updated: updatedNormCount,
         duplicates: duplicatesCount,
         incomplete: incompleteCount,
         invalid: invalidCount
@@ -267,7 +345,8 @@ export const runIngestion = async () => {
         details: {
           fetched_at: fetchedAt,
           incomplete_count: incompleteCount,
-          invalid_count: invalidCount
+          invalid_count: invalidCount,
+          updated_norm_count: updatedNormCount
         }
       });
 
