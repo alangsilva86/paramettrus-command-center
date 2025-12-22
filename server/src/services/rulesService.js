@@ -1,5 +1,8 @@
 import { query } from '../db.js';
 import { formatDate, toDateOnly } from '../utils/date.js';
+import { logInfo, logSuccess, logWarn } from '../utils/logger.js';
+
+let warnedDefaultRules = false;
 
 const DEFAULT_RULES = {
   rules_version_id: 'v2025_12_01_001',
@@ -47,6 +50,10 @@ export const getRulesVersionForDate = async (date) => {
   );
   if (result.rowCount > 0) return result.rows[0];
 
+  if (!warnedDefaultRules) {
+    logWarn('rules', 'Sem regras salvas, usando defaults embutidos');
+    warnedDefaultRules = true;
+  }
   return DEFAULT_RULES;
 };
 
@@ -68,6 +75,11 @@ export const createRulesVersion = async ({ payload, actor, force }) => {
   if (effectiveDate < today && !force) {
     throw new Error('effective_from no passado exige force=true');
   }
+
+  logInfo('rules', 'Criando nova rules version', {
+    effective_from: formatDate(effectiveDate),
+    actor: actor || 'system'
+  });
 
   const rulesVersionId = await buildRulesVersionId(formatDate(effectiveDate));
 
@@ -105,6 +117,8 @@ export const createRulesVersion = async ({ payload, actor, force }) => {
      VALUES ($1, $2, $3::jsonb)`,
     ['RULES_VERSION_CREATED', actor || null, JSON.stringify({ rules_version_id: rulesVersionId })]
   );
+
+  logSuccess('rules', 'Rules version criada', { rules_version_id: rulesVersionId });
 
   return rulesVersionId;
 };

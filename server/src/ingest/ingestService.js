@@ -3,6 +3,7 @@ import { sha256 } from '../utils/hash.js';
 import { normalizeZohoRecord } from './normalize.js';
 import { fetchZohoReport, withRetry } from './zohoClient.js';
 import { formatDate } from '../utils/date.js';
+import { logError, logInfo, logSuccess, logWarn } from '../utils/logger.js';
 
 const SOURCE = 'zoho';
 
@@ -185,11 +186,14 @@ const refreshCustomers = async (client, cpfCnpjs) => {
 
 export const runIngestion = async () => {
   const startedAt = new Date();
+  logInfo('ingest', 'Iniciando ingestão do Zoho');
   return withClient(async (client) => {
     const runId = await insertIngestionRun(client, startedAt);
     let fetchedCount = 0;
     let insertedNormCount = 0;
     let duplicatesCount = 0;
+    let incompleteCount = 0;
+    let invalidCount = 0;
     const fetchedAt = new Date().toISOString();
     const touchedCpfs = [];
 
@@ -197,6 +201,7 @@ export const runIngestion = async () => {
     try {
       records = await withRetry(() => fetchZohoReport(), 3);
     } catch (error) {
+      logError('ingest', 'Zoho indisponível ou credenciais inválidas');
       await finalizeIngestionRun(client, runId, {
         status: 'STALE_DATA',
         finishedAt: new Date(),
@@ -210,13 +215,17 @@ export const runIngestion = async () => {
 
     try {
       fetchedCount = records.length;
+      logInfo('ingest', 'Registros recebidos', { fetched: fetchedCount });
 
       for (const record of records) {
         await insertRawPayload(client, record, fetchedAt);
         const normalized = normalizeZohoRecord(record);
         if (!normalized.month_ref) {
+          invalidCount += 1;
           continue;
         }
+        if (normalized.is_incomplete) incompleteCount += 1;
+        if (normalized.is_invalid) invalidCount += 1;
 
         if (!normalized.is_synthetic_id) {
           const exists = await contractExists(client, normalized.contract_id);
@@ -239,6 +248,16 @@ export const runIngestion = async () => {
 
       await refreshCustomers(client, touchedCpfs);
 
+      if (insertedNormCount === 0) {
+        logWarn('ingest', 'Nenhum contrato normalizado foi inserido');
+      }
+      logSuccess('ingest', 'Ingestão concluída', {
+        inserted: insertedNormCount,
+        duplicates: duplicatesCount,
+        incomplete: incompleteCount,
+        invalid: invalidCount
+      });
+
       await finalizeIngestionRun(client, runId, {
         status: 'SUCCESS',
         finishedAt: new Date(),
@@ -246,12 +265,15 @@ export const runIngestion = async () => {
         insertedNormCount,
         duplicatesCount,
         details: {
-          fetched_at: fetchedAt
+          fetched_at: fetchedAt,
+          incomplete_count: incompleteCount,
+          invalid_count: invalidCount
         }
       });
 
       return { runId, status: 'SUCCESS' };
     } catch (error) {
+      logError('ingest', 'Falha durante normalização', { error: error?.message });
       await finalizeIngestionRun(client, runId, {
         status: 'FAILED',
         finishedAt: new Date(),

@@ -1,9 +1,10 @@
 import { query } from '../db.js';
 import { sha256 } from '../utils/hash.js';
-import { formatDate, formatMonthRef, toDateOnly } from '../utils/date.js';
+import { toDateOnly } from '../utils/date.js';
 import { getRulesVersionById, getRulesVersionForDate } from './rulesService.js';
 import { getVendorPenaltyMap } from './renewalService.js';
 import { config } from '../config.js';
+import { logInfo, logSuccess, logWarn } from '../utils/logger.js';
 
 const sortContracts = (a, b) => {
   if (a.data_efetivacao === b.data_efetivacao) {
@@ -86,7 +87,15 @@ const fetchContractsForMonth = async (monthRef) => {
 export const computeLedgerForMonth = async ({ monthRef, scenarioId = null, force = false, rulesVersionId = null }) => {
   if (!monthRef) throw new Error('monthRef obrigatório');
 
+  logInfo('ledger', 'Iniciando calculo de XP', {
+    month_ref: monthRef,
+    scenario_id: scenarioId,
+    force,
+    rules_version_id: rulesVersionId || 'auto'
+  });
+
   if (config.ingest.lockedMonths.includes(monthRef) && !force) {
+    logWarn('ledger', 'Mes bloqueado via config, precisa force', { month_ref: monthRef });
     throw new Error('Mês fechado. Use force_reprocess=true.');
   }
 
@@ -95,6 +104,7 @@ export const computeLedgerForMonth = async ({ monthRef, scenarioId = null, force
     [monthRef]
   );
   if (locked.rowCount > 0 && locked.rows[0].is_closed && !force) {
+    logWarn('ledger', 'Mes fechado no banco, precisa force', { month_ref: monthRef });
     throw new Error('Mês fechado. Use force_reprocess=true.');
   }
 
@@ -105,6 +115,29 @@ export const computeLedgerForMonth = async ({ monthRef, scenarioId = null, force
   const penaltyMap = await getVendorPenaltyMap(monthRef);
 
   const overrideRules = rulesVersionId ? await getRulesVersionById(rulesVersionId) : null;
+
+  logInfo('ledger', 'Contratos carregados', {
+    total_contratos: allContracts.length,
+    contratos_mes: monthContracts.length
+  });
+  if (monthContracts.length === 0) {
+    logWarn('ledger', 'Nenhum contrato elegivel no mes', { month_ref: monthRef });
+  }
+
+  const eventStats = { cross_sell: 0, combo_breaker: 0, ignored_cpf: 0 };
+  for (const event of crossSellEvents.values()) {
+    if (event.crossSell) eventStats.cross_sell += 1;
+    if (event.comboBreaker) eventStats.combo_breaker += 1;
+    if (event.ignoredCpf) eventStats.ignored_cpf += 1;
+  }
+  logInfo('ledger', 'Eventos cross-sell detectados', eventStats);
+  logInfo('ledger', 'Vendedores com bonus travado', { vendedores_bloqueados: penaltyMap.size });
+
+  let ledgerCount = 0;
+  let bonusLockedCount = 0;
+  let crossSellAwarded = 0;
+  let comboAwarded = 0;
+  let salvageAwarded = 0;
 
   for (const contract of monthContracts) {
     const dataEfetivacao = toDateOnly(contract.data_efetivacao);
@@ -123,10 +156,12 @@ export const computeLedgerForMonth = async ({ monthRef, scenarioId = null, force
       if (event?.crossSell) {
         xpBonus += Number(bonusEvents.cross_sell || 0);
         reasons.push('CROSS_SELL');
+        crossSellAwarded += 1;
       }
       if (event?.comboBreaker) {
         xpBonus += Number(bonusEvents.combo_breaker || 0);
         reasons.push('COMBO_BREAKER');
+        comboAwarded += 1;
       }
 
       const salvageActions = await query(
@@ -139,9 +174,11 @@ export const computeLedgerForMonth = async ({ monthRef, scenarioId = null, force
       if (salvageActions.rowCount > 0 && bonusEvents.salvamento_d5) {
         xpBonus += Number(bonusEvents.salvamento_d5);
         reasons.push('SALVAMENTO_D5');
+        salvageAwarded += 1;
       }
     } else {
       reasons.push('BONUS_LOCKED');
+      bonusLockedCount += 1;
     }
 
     const xpTotal = Number((xpBase + xpBonus).toFixed(2));
@@ -193,6 +230,8 @@ export const computeLedgerForMonth = async ({ monthRef, scenarioId = null, force
         scenarioId
       ]
     );
+
+    ledgerCount += 1;
   }
 
   await query(
@@ -203,6 +242,15 @@ export const computeLedgerForMonth = async ({ monthRef, scenarioId = null, force
       JSON.stringify({ month_ref: monthRef, scenario_id: scenarioId, force })
     ]
   );
+
+  logSuccess('ledger', 'Ledger atualizado', {
+    month_ref: monthRef,
+    entries: ledgerCount,
+    cross_sell_awards: crossSellAwarded,
+    combo_awards: comboAwarded,
+    salvamento_awards: salvageAwarded,
+    bonus_locked: bonusLockedCount
+  });
 
   return true;
 };

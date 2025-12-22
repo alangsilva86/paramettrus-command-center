@@ -51,8 +51,8 @@ const ZoneStrategy: React.FC<ZoneStrategyProps> = ({ data, crossSell }) => {
       
       {/* Widget F: Radar Bubble Chart (Product Mix) */}
       <WidgetCard title="Radar de Mix (Estratégia)" className="md:col-span-2">
-        <div className="w-full h-[220px]">
-          <ResponsiveContainer width="100%" height="100%">
+        <div className="w-full h-[220px] min-h-[220px] min-w-[260px]">
+          <ResponsiveContainer width="100%" height="100%" minWidth={260} minHeight={220}>
             <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 10 }}>
               <XAxis 
                 type="number" 

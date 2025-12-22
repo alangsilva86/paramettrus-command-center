@@ -4,6 +4,7 @@ import { countBusinessDays, endOfMonth, startOfMonth } from '../utils/date.js';
 import { computeLedgerForMonth } from './ledgerService.js';
 import { getRulesVersionById, getRulesVersionForDate } from './rulesService.js';
 import { getRenewalMetrics } from './renewalService.js';
+import { logInfo, logSuccess, logWarn } from '../utils/logger.js';
 
 const fetchContractsForMonth = async (monthRef, includeIncomplete = false) => {
   const result = await query(
@@ -142,6 +143,13 @@ const getCustomersMonoprodutoPct = async () => {
 };
 
 export const buildMonthlySnapshot = async ({ monthRef, scenarioId = null, force = false, rulesVersionId = null }) => {
+  logInfo('snapshot', 'Montando snapshot mensal', {
+    month_ref: monthRef,
+    scenario_id: scenarioId,
+    force,
+    rules_version_id: rulesVersionId || 'auto'
+  });
+
   const monthStart = startOfMonth(monthRef);
   const overrideRules = rulesVersionId ? await getRulesVersionById(rulesVersionId) : null;
   const rules = overrideRules || (await getRulesVersionForDate(monthStart));
@@ -149,8 +157,27 @@ export const buildMonthlySnapshot = async ({ monthRef, scenarioId = null, force 
   const rulesVersionToUse = overrideRules ? overrideRules.rules_version_id : null;
   await computeLedgerForMonth({ monthRef, scenarioId, force, rulesVersionId: rulesVersionToUse });
 
+  logInfo('snapshot', 'Regras aplicadas', {
+    rules_version_id: rules.rules_version_id,
+    meta_comissao: Number(rules.meta_global_comissao),
+    dias_uteis: Number(rules.dias_uteis)
+  });
+
   const contracts = await fetchContractsForMonth(monthRef, true);
   const comissaoMtd = contracts.reduce((sum, c) => sum + Number(c.comissao_valor || 0), 0);
+  if (contracts.length === 0) {
+    logWarn('snapshot', 'Nenhum contrato encontrado para o mes', { month_ref: monthRef });
+  } else {
+    logInfo('snapshot', 'Contratos carregados', {
+      count: contracts.length,
+      comissao_mtd: Number(comissaoMtd.toFixed(2))
+    });
+  }
+  if (comissaoMtd === 0) {
+    logWarn('snapshot', 'Comissao MTD zerada. Verifique ingestao ou mes selecionado', {
+      month_ref: monthRef
+    });
+  }
 
   const today = new Date();
   const monthEnd = endOfMonth(monthRef);
@@ -159,6 +186,10 @@ export const buildMonthlySnapshot = async ({ monthRef, scenarioId = null, force 
   const curveShare = await getCurveShare(dayOfMonth, config.ingest.defaultCurveId);
   const shareEsperado = curveShare || dayOfMonth / monthEnd.getUTCDate();
   if (!curveShare) {
+    logWarn('snapshot', 'Curva historica indisponivel, usando fallback linear', {
+      month_ref: monthRef,
+      day: dayOfMonth
+    });
     await query(
       `INSERT INTO audit_logs (event_type, payload)
        VALUES ($1, $2::jsonb)`,
@@ -183,9 +214,19 @@ export const buildMonthlySnapshot = async ({ monthRef, scenarioId = null, force 
   renewals.black.forEach((contract) => {
     blackByRamo.set(contract.ramo, (blackByRamo.get(contract.ramo) || 0) + 1);
   });
+  logInfo('snapshot', 'Semaforo de renovacao calculado', {
+    d7: renewals.d7.length,
+    d15: renewals.d15.length,
+    black: renewals.blackListCount
+  });
+
   const leaderboard = await getLeaderboard(monthRef, scenarioId);
   const radar = await getRadarData(blackByRamo);
   const status = await getLatestIngestionStatus();
+  logInfo('snapshot', 'Status de ingestao', {
+    status: status.status,
+    finished_at: status.finishedAt
+  });
 
   const snapshot = {
     month: monthRef,
@@ -217,6 +258,13 @@ export const buildMonthlySnapshot = async ({ monthRef, scenarioId = null, force 
      VALUES ($1, $2, $3, $4::jsonb, $5, $6)`,
     [monthRef, scenarioId, rules.rules_version_id, JSON.stringify(snapshot), Boolean(scenarioId), staleData]
   );
+
+  logSuccess('snapshot', 'Snapshot pronto', {
+    month_ref: monthRef,
+    leaderboard: leaderboard.length,
+    radar_products: radar.bubbleProducts.length,
+    stale_data: staleData
+  });
 
   return snapshot;
 };

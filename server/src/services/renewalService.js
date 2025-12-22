@@ -1,6 +1,7 @@
 import { query } from '../db.js';
 import { config } from '../config.js';
 import { addDays, daysDiff, toDateOnly } from '../utils/date.js';
+import { logInfo, logWarn } from '../utils/logger.js';
 
 const buildRenewalIndex = (contracts) => {
   const grouped = new Map();
@@ -54,9 +55,15 @@ const fetchContracts = async () => {
 };
 
 export const getRenewalMetrics = async ({ referenceDate = new Date() } = {}) => {
-  const contracts = await fetchContracts();
-  const grouped = buildRenewalIndex(contracts);
   const reference = toDateOnly(referenceDate);
+  logInfo('renewal', 'Calculando semaforo de renovacao', {
+    referencia: reference ? reference.toISOString().slice(0, 10) : null
+  });
+  const contracts = await fetchContracts();
+  if (contracts.length === 0) {
+    logWarn('renewal', 'Nenhum contrato disponivel para renovacao');
+  }
+  const grouped = buildRenewalIndex(contracts);
   const graceDays = Number(config.ingest.renewalGraceDays || 0);
 
   const d5 = [];
@@ -100,6 +107,13 @@ export const getRenewalMetrics = async ({ referenceDate = new Date() } = {}) => 
   const d7Risk = d7.reduce((sum, item) => sum + Number(item.comissao_valor || 0), 0);
   const d15Risk = d15.reduce((sum, item) => sum + Number(item.comissao_valor || 0), 0);
 
+  logInfo('renewal', 'Resumo TLP', {
+    d5: d5.length,
+    d7: d7.length,
+    d15: d15.length,
+    black: black.length
+  });
+
   return {
     d5,
     d7,
@@ -113,6 +127,7 @@ export const getRenewalMetrics = async ({ referenceDate = new Date() } = {}) => 
 };
 
 export const getVendorPenaltyMap = async (monthRef) => {
+  logInfo('renewal', 'Verificando penalidades por churn', { month_ref: monthRef });
   const metrics = await getRenewalMetrics();
   const map = new Map();
   if (metrics.black.length === 0) return map;
@@ -128,6 +143,7 @@ export const getVendorPenaltyMap = async (monthRef) => {
       map.set(contract.vendedor_id, true);
     }
   }
+  logInfo('renewal', 'Penalidades aplicadas', { vendedores_bloqueados: map.size });
   return map;
 };
 
