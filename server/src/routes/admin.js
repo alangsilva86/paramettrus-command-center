@@ -1,5 +1,6 @@
 import express from 'express';
 import { config } from '../config.js';
+import { query } from '../db.js';
 import { createRulesVersion } from '../services/rulesService.js';
 import { runIngestion } from '../ingest/ingestService.js';
 import { logError, logInfo, logWarn } from '../utils/logger.js';
@@ -33,6 +34,34 @@ router.post('/rules_versions', requireAdmin, async (req, res) => {
   } catch (error) {
     logError('admin', 'Falha ao criar rules version', { error: error.message });
     res.status(400).json({ error: error.message });
+  }
+});
+
+router.get('/rules_versions', requireAdmin, async (req, res) => {
+  const limit = Math.min(Number(req.query.limit || 50), 200);
+  try {
+    logInfo('admin', 'Listando rules versions', { limit });
+    const result = await query(
+      `SELECT rules_version_id,
+              effective_from,
+              effective_to,
+              meta_global_comissao,
+              dias_uteis,
+              product_weights,
+              bonus_events,
+              penalties,
+              created_by,
+              created_at,
+              audit_note
+       FROM rules_versions
+       ORDER BY effective_from DESC, created_at DESC
+       LIMIT $1`,
+      [limit]
+    );
+    res.json({ items: result.rows });
+  } catch (error) {
+    logError('admin', 'Falha ao listar rules versions', { error: error.message });
+    res.status(500).json({ error: error.message });
   }
 });
 

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import ZoneHud from './components/ZoneHud';
 import ZoneGame from './components/ZoneGame';
 import ZoneStrategy from './components/ZoneStrategy';
+import AdminPanel from './components/AdminPanel';
 import { fetchCrossSellSummary, fetchDashboardSnapshot, fetchRenewalList, fetchStatus } from './services/zohoService';
 import { CrossSellSummary, DashboardSnapshot, RenewalListItem, StatusResponse } from './types';
 import { Terminal, ShieldCheck } from 'lucide-react';
@@ -13,6 +14,7 @@ const App: React.FC = () => {
   const [renewalsD15, setRenewalsD15] = useState<RenewalListItem[]>([]);
   const [crossSell, setCrossSell] = useState<CrossSellSummary | null>(null);
   const [status, setStatus] = useState<StatusResponse | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   const monthRef = new Date().toISOString().slice(0, 7);
 
@@ -39,7 +41,16 @@ const App: React.FC = () => {
     };
 
     loadData();
-  }, [monthRef]);
+  }, [monthRef, reloadKey]);
+
+  const refreshStatus = async () => {
+    const statusResponse = await fetchStatus();
+    setStatus(statusResponse);
+  };
+
+  const reloadDashboard = () => {
+    setReloadKey((prev) => prev + 1);
+  };
 
   return (
     <div className="min-h-screen bg-param-bg text-param-text font-sans p-4 md:p-6 lg:p-8 overflow-hidden flex flex-col">
@@ -92,6 +103,16 @@ const App: React.FC = () => {
           {/* ZONA 3: Inteligência Estratégica (35% visual weight) */}
           <section className="flex-shrink-0 min-h-[250px]">
             <ZoneStrategy data={data} crossSell={crossSell} />
+          </section>
+
+          {/* ZONA 4: Admin Ops */}
+          <section className="flex-shrink-0 min-h-[280px]">
+            <AdminPanel
+              monthRef={monthRef}
+              status={status}
+              onStatusRefresh={refreshStatus}
+              onReloadDashboard={reloadDashboard}
+            />
           </section>
 
         </main>

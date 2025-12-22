@@ -40,6 +40,14 @@ export interface RulesVersion {
   };
 }
 
+export interface RulesVersionItem extends RulesVersion {
+  effective_to?: string | null;
+  penalties?: Record<string, unknown>;
+  created_by?: string | null;
+  created_at?: string;
+  audit_note?: string | null;
+}
+
 // --- SCHEMA 2.4.5: XP Ledger ---
 export interface XpLedgerEntry {
   ledger_id: string;
@@ -119,4 +127,15 @@ export interface StatusResponse {
   status: string;
   last_ingestion_at: string | null;
   stale_data: boolean;
+}
+
+export interface AdminIngestResponse {
+  status: string;
+  run_id?: string;
+  error?: string;
+}
+
+export interface AdminRulesCreateResponse {
+  rules_version_id: string;
+  status: string;
 }
