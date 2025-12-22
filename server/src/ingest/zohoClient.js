@@ -18,7 +18,18 @@ export const getZohoAccessToken = async () => {
 
 export const fetchZohoReport = async ({ limit = 200 } = {}) => {
   const token = await getZohoAccessToken();
-  const baseUrl = `${config.zoho.apiDomain}/creator/v2.1/data/${config.zoho.creatorApp}/${config.zoho.creatorReport}`;
+  const base = `${config.zoho.apiDomain}/creator/v2.1/data`;
+  let path = '';
+
+  if (config.zoho.creatorOwner) {
+    path = `${config.zoho.creatorOwner}/${config.zoho.creatorApp}/report/${config.zoho.creatorReport}`;
+  } else if (config.zoho.creatorApp.includes('/')) {
+    path = `${config.zoho.creatorApp}/${config.zoho.creatorReport}`;
+  } else {
+    path = `${config.zoho.creatorApp}/report/${config.zoho.creatorReport}`;
+  }
+
+  const baseUrl = `${base}/${path}`;
   const records = [];
   let page = 1;
   let keepGoing = true;
@@ -26,7 +37,8 @@ export const fetchZohoReport = async ({ limit = 200 } = {}) => {
   while (keepGoing) {
     const response = await axios.get(baseUrl, {
       headers: {
-        Authorization: `Zoho-oauthtoken ${token}`
+        Authorization: `Zoho-oauthtoken ${token}`,
+        Accept: 'application/json'
       },
       params: {
         page,

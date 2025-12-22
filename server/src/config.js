@@ -25,6 +25,7 @@ export const config = {
     clientSecret: required('ZOHO_CLIENT_SECRET', 'missing'),
     refreshToken: required('ZOHO_REFRESH_TOKEN', 'missing'),
     apiDomain: process.env.ZOHO_API_DOMAIN || 'https://www.zohoapis.com',
+    creatorOwner: process.env.ZOHO_CREATOR_OWNER || '',
     creatorApp: process.env.ZOHO_CREATOR_APP || 'corretora_paramettrus',
     creatorReport: process.env.ZOHO_CREATOR_REPORT || 'Contratos_Report'
   },
