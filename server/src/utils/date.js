@@ -20,6 +20,29 @@ export const toDateOnly = (value) => {
     return new Date(Date.UTC(Number(y), Number(m) - 1, Number(d)));
   }
 
+  const monthMap = {
+    JAN: 0,
+    FEB: 1,
+    MAR: 2,
+    APR: 3,
+    MAY: 4,
+    JUN: 5,
+    JUL: 6,
+    AUG: 7,
+    SEP: 8,
+    OCT: 9,
+    NOV: 10,
+    DEC: 11
+  };
+  const monthMatch = raw.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{4})$/);
+  if (monthMatch) {
+    const [, d, mon, y] = monthMatch;
+    const monthIdx = monthMap[mon.toUpperCase()];
+    if (monthIdx !== undefined) {
+      return new Date(Date.UTC(Number(y), monthIdx, Number(d)));
+    }
+  }
+
   const parsed = new Date(raw);
   if (Number.isNaN(parsed.getTime())) return null;
   return new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate()));

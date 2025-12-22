@@ -38,18 +38,19 @@ export const config = {
       .filter(Boolean)
   },
   zohoFields: {
-    contractId: process.env.ZOHO_FIELD_CONTRACT_ID || 'contract_id',
-    cpfCnpj: process.env.ZOHO_FIELD_CPF_CNPJ || 'cpf_cnpj',
-    seguradoNome: process.env.ZOHO_FIELD_SEGURADO_NOME || 'segurado_nome',
-    vendedorId: process.env.ZOHO_FIELD_VENDEDOR_ID || 'vendedor_id',
-    produto: process.env.ZOHO_FIELD_PRODUTO || 'produto',
-    seguradora: process.env.ZOHO_FIELD_SEGURADORA || 'seguradora',
-    cidade: process.env.ZOHO_FIELD_CIDADE || 'cidade',
-    dataEfetivacao: process.env.ZOHO_FIELD_DATA_EFETIVACAO || 'data_efetivacao',
-    inicio: process.env.ZOHO_FIELD_INICIO || 'inicio',
-    termino: process.env.ZOHO_FIELD_TERMINO || 'termino',
-    premio: process.env.ZOHO_FIELD_PREMIO || 'premio',
-    comissaoValor: process.env.ZOHO_FIELD_COMISSAO_VALOR || 'comissao_valor',
-    comissaoPct: process.env.ZOHO_FIELD_COMISSAO_PCT || 'comissao_pct'
+    contractId: process.env.ZOHO_FIELD_CONTRACT_ID || 'ID',
+    cpfCnpj: process.env.ZOHO_FIELD_CPF_CNPJ || 'contract_client.client_document',
+    seguradoNome: process.env.ZOHO_FIELD_SEGURADO_NOME || 'contract_client.client_name',
+    vendedorId: process.env.ZOHO_FIELD_VENDEDOR_ID || 'Owner.name',
+    produto: process.env.ZOHO_FIELD_PRODUTO || 'contract_product.product_name',
+    seguradora: process.env.ZOHO_FIELD_SEGURADORA || 'Seguradora.insurance_company_name',
+    cidade: process.env.ZOHO_FIELD_CIDADE || 'contract_client.client_address_city',
+    dataEfetivacao: process.env.ZOHO_FIELD_DATA_EFETIVACAO || 'contract_effective_date',
+    inicio: process.env.ZOHO_FIELD_INICIO || 'start__validity_date',
+    termino: process.env.ZOHO_FIELD_TERMINO || 'finish__validity_date',
+    premio: process.env.ZOHO_FIELD_PREMIO || 'contract_award',
+    comissaoValor: process.env.ZOHO_FIELD_COMISSAO_VALOR || 'contract_commission_amount',
+    comissaoPct: process.env.ZOHO_FIELD_COMISSAO_PCT || 'contract_commission_percent',
+    status: process.env.ZOHO_FIELD_STATUS || 'contract_status'
   }
 };

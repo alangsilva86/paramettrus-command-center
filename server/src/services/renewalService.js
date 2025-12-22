@@ -48,7 +48,7 @@ const fetchContracts = async () => {
   const result = await query(
     `SELECT contract_id, cpf_cnpj, segurado_nome, vendedor_id, ramo, premio, comissao_valor, inicio, termino, status
      FROM contracts_norm
-     WHERE is_incomplete = FALSE AND is_invalid = FALSE`
+     WHERE is_invalid = FALSE`
   );
   return result.rows;
 };

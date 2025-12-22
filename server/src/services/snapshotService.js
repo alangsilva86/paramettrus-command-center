@@ -5,14 +5,14 @@ import { computeLedgerForMonth } from './ledgerService.js';
 import { getRulesVersionById, getRulesVersionForDate } from './rulesService.js';
 import { getRenewalMetrics } from './renewalService.js';
 
-const fetchContractsForMonth = async (monthRef) => {
+const fetchContractsForMonth = async (monthRef, includeIncomplete = false) => {
   const result = await query(
     `SELECT *
      FROM contracts_norm
      WHERE month_ref = $1
-       AND is_incomplete = FALSE
-       AND is_invalid = FALSE`,
-    [monthRef]
+       AND is_invalid = FALSE
+       AND ($2::boolean = TRUE OR is_incomplete = FALSE)`,
+    [monthRef, includeIncomplete]
   );
   return result.rows;
 };
@@ -95,7 +95,7 @@ const getRadarData = async (blackByRamo) => {
   const contracts = await query(
     `SELECT contract_id, ramo, seguradora, comissao_valor, premio
      FROM contracts_norm
-     WHERE is_incomplete = FALSE AND is_invalid = FALSE`
+     WHERE is_invalid = FALSE`
   );
 
   const ramoStats = new Map();
@@ -149,7 +149,7 @@ export const buildMonthlySnapshot = async ({ monthRef, scenarioId = null, force 
   const rulesVersionToUse = overrideRules ? overrideRules.rules_version_id : null;
   await computeLedgerForMonth({ monthRef, scenarioId, force, rulesVersionId: rulesVersionToUse });
 
-  const contracts = await fetchContractsForMonth(monthRef);
+  const contracts = await fetchContractsForMonth(monthRef, true);
   const comissaoMtd = contracts.reduce((sum, c) => sum + Number(c.comissao_valor || 0), 0);
 
   const today = new Date();

@@ -17,12 +17,36 @@ const requiredFields = [
 
 const getField = (record, key) => {
   if (!record || !key) return null;
-  return record[key] ?? record[key?.toUpperCase?.()] ?? null;
+  if (record[key] !== undefined) return record[key];
+  const upperKey = key?.toUpperCase?.();
+  if (upperKey && record[upperKey] !== undefined) return record[upperKey];
+  if (key.includes('.')) {
+    const parts = key.split('.');
+    let current = record;
+    for (const part of parts) {
+      if (current && typeof current === 'object' && part in current) {
+        current = current[part];
+      } else {
+        current = null;
+        break;
+      }
+    }
+    if (current !== null && current !== undefined) return current;
+  }
+  return null;
 };
 
 const resolveVendorId = (record) => {
   const fieldValue = getField(record, config.zohoFields.vendedorId);
   if (fieldValue) return String(fieldValue).trim();
+  if (record.Owner && typeof record.Owner === 'object') {
+    if (record.Owner.name) return String(record.Owner.name).trim();
+    if (record.Owner.email) return String(record.Owner.email).trim();
+  }
+  if (record.owner && typeof record.owner === 'object') {
+    if (record.owner.name) return String(record.owner.name).trim();
+    if (record.owner.email) return String(record.owner.email).trim();
+  }
   const fallback = record.vendedor_nome || record.vendedor || record.vendedor_id;
   return fallback ? String(fallback).trim() : null;
 };
@@ -66,6 +90,9 @@ export const normalizeZohoRecord = (record) => {
   const isSyntheticId = !rawContractId;
   const contractId = rawContractId ? String(rawContractId) : rowHash;
 
+  const statusRaw = getField(record, config.zohoFields.status) || record.status || record.Status || 'vigente';
+  const statusNormalized = String(statusRaw || 'vigente').trim().toLowerCase();
+
   const normalized = {
     contract_id: contractId,
     cpf_cnpj: cpfCnpj,
@@ -78,7 +105,7 @@ export const normalizeZohoRecord = (record) => {
     data_efetivacao: dataEfetivacaoISO,
     inicio: inicioISO,
     termino: terminoISO,
-    status: record.status || record.Status || 'vigente',
+    status: statusNormalized,
     premio,
     comissao_pct: comissaoPct ?? (premio && comissaoValor ? comissaoValor / premio : null),
     comissao_valor: comissaoValor,
