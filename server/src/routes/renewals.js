@@ -6,9 +6,11 @@ const router = express.Router();
 
 router.get('/list', async (req, res) => {
   const windowDays = Number(req.query.window || 15);
+  const vendorId = req.query.vendedor_id || null;
+  const ramo = req.query.ramo || null;
   try {
-    logInfo('renewal', 'Requisicao lista renovacoes', { window_days: windowDays });
-    const list = await listRenewals({ windowDays });
+    logInfo('renewal', 'Requisicao lista renovacoes', { window_days: windowDays, vendor_id: vendorId, ramo });
+    const list = await listRenewals({ windowDays, vendorId, ramo });
     logInfo('renewal', 'Lista renovacoes pronta', { items: list.length });
     res.json({ window_days: windowDays, items: list });
   } catch (error) {

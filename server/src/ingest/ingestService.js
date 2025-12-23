@@ -62,12 +62,16 @@ const insertRawPayload = async (client, record, fetchedAt) => {
   return payloadHash;
 };
 
-const getExistingRowHash = async (client, contractId) => {
+const getExistingRowInfo = async (client, contractId) => {
   const result = await client.query(
-    'SELECT row_hash FROM contracts_norm WHERE contract_id = $1 LIMIT 1',
+    'SELECT row_hash, vendedor_id FROM contracts_norm WHERE contract_id = $1 LIMIT 1',
     [contractId]
   );
-  return result.rowCount > 0 ? result.rows[0].row_hash : null;
+  if (result.rowCount === 0) return null;
+  return {
+    rowHash: result.rows[0].row_hash,
+    vendedorId: result.rows[0].vendedor_id
+  };
 };
 
 const rowHashExistsInMonth = async (client, rowHash, monthRef) => {
@@ -299,9 +303,10 @@ export const runIngestion = async () => {
         if (normalized.is_invalid) invalidCount += 1;
 
         if (!normalized.is_synthetic_id) {
-          const existingHash = await getExistingRowHash(client, normalized.contract_id);
-          if (existingHash) {
-            if (existingHash === normalized.row_hash) {
+          const existing = await getExistingRowInfo(client, normalized.contract_id);
+          if (existing) {
+            const needsVendorUpdate = !existing.vendedorId || existing.vendedorId === '';
+            if (existing.rowHash === normalized.row_hash && !needsVendorUpdate) {
               duplicatesCount += 1;
               continue;
             }

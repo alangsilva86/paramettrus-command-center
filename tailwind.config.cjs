@@ -9,14 +9,15 @@ module.exports = {
     extend: {
       colors: {
         param: {
-          bg: '#0E0E11',
-          card: '#1C1C21',
-          border: '#333333',
-          primary: '#FF6B06',
-          accent: '#5A4BE3',
-          success: '#00C853',
-          danger: '#FF1744',
-          text: '#F7F7F7'
+          bg: '#121212',
+          card: '#1A1A1A',
+          border: 'rgba(255,255,255,0.08)',
+          primary: '#0B7F16',
+          accent: '#05400B',
+          success: '#0B7F16',
+          warning: '#F59E0B',
+          danger: '#B91C1C',
+          text: 'rgba(255,255,255,0.92)'
         }
       },
       fontFamily: {

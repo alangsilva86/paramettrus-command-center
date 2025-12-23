@@ -11,9 +11,10 @@ interface WidgetCardProps {
 const WidgetCard: React.FC<WidgetCardProps> = ({ title, children, className = '', action, alert = false }) => {
   return (
     <div className={`
-      relative flex flex-col p-5 rounded-sm 
+      relative flex flex-col p-4 md:p-5 lg:p-6 rounded-xl
       bg-param-card border transition-all duration-300
-      ${alert ? 'border-param-danger shadow-[0_0_15px_rgba(255,23,68,0.2)]' : 'border-param-border'}
+      shadow-[0_1px_2px_rgba(0,0,0,0.35),0_10px_24px_rgba(0,0,0,0.2)]
+      ${alert ? 'border-param-danger shadow-[0_0_0_1px_rgba(185,28,28,0.35)]' : 'border-param-border'}
       ${className}
     `}>
       {(title || action) && (

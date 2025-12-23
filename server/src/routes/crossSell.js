@@ -4,10 +4,11 @@ import { logError, logInfo } from '../utils/logger.js';
 
 const router = express.Router();
 
-router.get('/auto-sem-vida', async (_req, res) => {
+router.get('/auto-sem-vida', async (req, res) => {
+  const vendorId = req.query.vendedor_id || null;
   try {
     logInfo('cross', 'Requisicao auto-sem-vida recebida');
-    const summary = await getCrossSellSummary();
+    const summary = await getCrossSellSummary({ vendorId });
     logInfo('cross', 'Requisicao atendida', { auto_sem_vida: summary.autoSemVidaCount });
     res.json(summary);
   } catch (error) {

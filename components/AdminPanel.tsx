@@ -3,10 +3,12 @@ import WidgetCard from './WidgetCard';
 import {
   createRulesVersion,
   fetchScenarioSnapshot,
+  fetchScenarioHistory,
+  fetchSnapshotCompare,
   listRulesVersions,
   triggerIngestion
 } from '../services/zohoService';
-import { DashboardSnapshot, RulesVersionItem, StatusResponse } from '../types';
+import { DashboardSnapshot, RulesVersionItem, SnapshotCompare, StatusResponse } from '../types';
 import { RefreshCw, Play, Save, ShieldCheck, Sparkles } from 'lucide-react';
 
 interface AdminPanelProps {
@@ -37,7 +39,7 @@ const DEFAULT_BONUSES = {
 };
 
 const inputClass =
-  'bg-param-bg border border-param-border text-xs text-white px-2 py-2 rounded-sm focus:outline-none focus:border-param-primary';
+  'bg-param-bg border border-param-border text-xs text-white px-3 py-2 h-10 rounded-[10px] focus:outline-none focus:border-param-primary focus:ring-2 focus:ring-param-primary/30';
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ monthRef, status, onStatusRefresh, onReloadDashboard }) => {
   const [adminToken, setAdminToken] = useState(() => localStorage.getItem('param_admin_token') || '');
@@ -49,6 +51,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ monthRef, status, onStatusRefre
   const [ingestLoading, setIngestLoading] = useState(false);
   const [scenarioLoading, setScenarioLoading] = useState(false);
   const [scenarioSnapshot, setScenarioSnapshot] = useState<DashboardSnapshot | null>(null);
+  const [scenarioCompare, setScenarioCompare] = useState<SnapshotCompare | null>(null);
+  const [scenarioHistory, setScenarioHistory] = useState<DashboardSnapshot[]>([]);
+  const [scenarioHistoryLoading, setScenarioHistoryLoading] = useState(false);
 
   const [formTouched, setFormTouched] = useState(false);
   const [formState, setFormState] = useState(() => ({
@@ -66,6 +71,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ monthRef, status, onStatusRefre
   const [scenarioMonth, setScenarioMonth] = useState(monthRef);
   const [scenarioId, setScenarioId] = useState(buildScenarioId());
   const [scenarioRulesId, setScenarioRulesId] = useState('');
+
+  const deltaTone = (value: number) => (value >= 0 ? 'text-param-success' : 'text-param-danger');
+  const formatDeltaValue = (value: number, isPct = false) => {
+    if (isPct) return `${value >= 0 ? '+' : ''}${(value * 100).toFixed(1)}%`;
+    const formatted = Math.abs(value).toLocaleString('pt-BR', { maximumFractionDigits: 0 });
+    return `${value >= 0 ? '+' : '-'} R$ ${formatted}`;
+  };
 
   useEffect(() => {
     localStorage.setItem('param_admin_token', adminToken);
@@ -94,9 +106,26 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ monthRef, status, onStatusRefre
     }
   };
 
+  const loadScenarioHistory = async (targetMonth = scenarioMonth) => {
+    setScenarioHistoryLoading(true);
+    setRulesError('');
+    try {
+      const items = await fetchScenarioHistory(targetMonth);
+      setScenarioHistory(items);
+    } catch (error: any) {
+      setRulesError(error.message || 'Falha ao carregar histórico de cenários');
+    } finally {
+      setScenarioHistoryLoading(false);
+    }
+  };
+
   useEffect(() => {
     loadRules();
   }, [adminToken]);
+
+  useEffect(() => {
+    loadScenarioHistory();
+  }, [scenarioMonth]);
 
   useEffect(() => {
     if (latestRule && !formTouched) {
@@ -189,6 +218,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ monthRef, status, onStatusRefre
         scenarioRulesId || undefined
       );
       setScenarioSnapshot(snapshot);
+      if (scenarioId) {
+        const compare = await fetchSnapshotCompare(scenarioMonth, scenarioId);
+        setScenarioCompare(compare);
+      } else {
+        setScenarioCompare(null);
+      }
+      await loadScenarioHistory();
     } catch (error: any) {
       setRulesError(error.message || 'Falha ao simular cenário');
     } finally {
@@ -219,7 +255,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ monthRef, status, onStatusRefre
               onChange={(event) => setActor(event.target.value)}
             />
           </div>
-          <div className="border-t border-gray-800 pt-3">
+          <div className="border-t border-param-border pt-3">
             <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-2">Ingestão</div>
             <div className="flex items-center justify-between text-[10px] text-gray-500 mb-2">
               <span>Status</span>
@@ -236,14 +272,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ monthRef, status, onStatusRefre
                 type="button"
                 onClick={handleRunIngestion}
                 disabled={ingestLoading}
-                className="flex-1 text-[10px] font-bold uppercase tracking-widest px-3 py-2 rounded-sm border border-param-primary bg-param-primary text-black hover:brightness-110 disabled:opacity-50"
+                className="flex-1 text-[10px] font-bold uppercase tracking-widest px-4 py-2 h-10 rounded-[10px] border border-param-primary bg-param-primary text-white hover:brightness-110 disabled:opacity-50"
               >
                 {ingestLoading ? 'Rodando...' : 'Rodar ingestão'}
               </button>
               <button
                 type="button"
                 onClick={onReloadDashboard}
-                className="text-[10px] font-bold uppercase tracking-widest px-3 py-2 rounded-sm border border-param-border text-gray-300 hover:border-param-primary"
+                className="text-[10px] font-bold uppercase tracking-widest px-4 py-2 h-10 rounded-[10px] border border-param-border text-white/80 hover:border-param-primary"
               >
                 <RefreshCw className="w-4 h-4" />
               </button>
@@ -251,7 +287,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ monthRef, status, onStatusRefre
           </div>
           {(rulesMessage || rulesError) && (
             <div
-              className={`text-[10px] mt-2 p-2 rounded-sm border ${
+              className={`text-[10px] mt-2 p-3 rounded-[10px] border ${
                 rulesError ? 'border-param-danger text-param-danger' : 'border-param-success text-param-success'
               }`}
             >
@@ -377,7 +413,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ monthRef, status, onStatusRefre
             <div>
               <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-1">Audit note</div>
               <textarea
-                className={`${inputClass} min-h-[72px]`}
+                className={`${inputClass} min-h-[72px] h-auto`}
                 value={formState.audit_note}
                 onChange={(event) => {
                   setFormTouched(true);
@@ -389,7 +425,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ monthRef, status, onStatusRefre
               <button
                 type="button"
                 onClick={handleCreateRules}
-                className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest px-3 py-2 rounded-sm border border-param-primary bg-param-primary text-black hover:brightness-110"
+                className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest px-4 py-2 h-10 rounded-[10px] border border-param-primary bg-param-primary text-white hover:brightness-110"
               >
                 <Save className="w-4 h-4" />
                 Criar rules
@@ -397,7 +433,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ monthRef, status, onStatusRefre
               <button
                 type="button"
                 onClick={loadRules}
-                className="text-[10px] font-bold uppercase tracking-widest px-3 py-2 rounded-sm border border-param-border text-gray-300 hover:border-param-primary"
+                className="text-[10px] font-bold uppercase tracking-widest px-4 py-2 h-10 rounded-[10px] border border-param-border text-white/80 hover:border-param-primary"
               >
                 Atualizar lista
               </button>
@@ -453,7 +489,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ monthRef, status, onStatusRefre
               type="button"
               onClick={handleScenario}
               disabled={scenarioLoading}
-              className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest px-3 py-2 rounded-sm border border-param-accent text-param-accent hover:border-param-primary disabled:opacity-50"
+              className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest px-4 py-2 h-10 rounded-[10px] border border-param-accent text-param-accent hover:border-param-primary disabled:opacity-50"
             >
               <Play className="w-4 h-4" />
               {scenarioLoading ? 'Simulando...' : 'Rodar cenário'}
@@ -464,25 +500,25 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ monthRef, status, onStatusRefre
             <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-2">Resumo do cenário</div>
             {scenarioSnapshot ? (
               <div className="grid grid-cols-2 gap-3">
-                <div className="p-3 border border-gray-800 rounded-sm">
+                <div className="p-3 border border-param-border rounded-xl">
                   <div className="text-[10px] text-gray-500">Forecast % meta</div>
                   <div className="text-lg font-bold text-param-success">
                     {(scenarioSnapshot.kpis.forecast_pct_meta * 100).toFixed(1)}%
                   </div>
                 </div>
-                <div className="p-3 border border-gray-800 rounded-sm">
+                <div className="p-3 border border-param-border rounded-xl">
                   <div className="text-[10px] text-gray-500">Gap diário</div>
                   <div className="text-lg font-bold text-param-primary">
                     R$ {scenarioSnapshot.kpis.gap_diario.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
                   </div>
                 </div>
-                <div className="p-3 border border-gray-800 rounded-sm">
+                <div className="p-3 border border-param-border rounded-xl">
                   <div className="text-[10px] text-gray-500">Auto share</div>
                   <div className="text-lg font-bold text-param-danger">
                     {(scenarioSnapshot.kpis.auto_share_comissao * 100).toFixed(1)}%
                   </div>
                 </div>
-                <div className="p-3 border border-gray-800 rounded-sm">
+                <div className="p-3 border border-param-border rounded-xl">
                   <div className="text-[10px] text-gray-500">XP Leaders</div>
                   <div className="text-lg font-bold text-param-accent">
                     {scenarioSnapshot.leaderboard.length}
@@ -491,6 +527,69 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ monthRef, status, onStatusRefre
               </div>
             ) : (
               <div className="text-gray-600 italic">Sem cenário rodado ainda.</div>
+            )}
+
+            {scenarioCompare && (
+              <div className="mt-4 pt-3 border-t border-param-border">
+                <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-2">Delta vs Atual</div>
+                <div className="grid grid-cols-2 gap-3">
+                  {[
+                    { key: 'comissao_mtd', label: 'Comissão MTD' },
+                    { key: 'premio_mtd', label: 'Prêmio MTD' },
+                    { key: 'forecast_comissao', label: 'Forecast' },
+                    { key: 'gap_diario', label: 'Gap Diário' }
+                  ].map((item) => {
+                    const value = Number(scenarioCompare.delta.kpis[item.key] || 0);
+                    return (
+                      <div key={item.key} className="p-3 border border-param-border rounded-xl">
+                        <div className="text-[10px] text-gray-500">{item.label}</div>
+                        <div className={`text-sm font-bold ${deltaTone(value)}`}>
+                          {formatDeltaValue(value)}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="mt-3">
+                  <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-2">Mudanças de Ranking</div>
+                  <div className="space-y-2">
+                    {scenarioCompare.delta.ranking.map((item) => (
+                      <div key={item.vendedor_id} className="flex items-center justify-between text-[10px] text-gray-400">
+                        <span className="text-white font-bold">{item.vendedor_id}</span>
+                        <span>
+                          {item.base_rank ?? '—'} → {item.scenario_rank ?? '—'} (
+                          <span className={deltaTone(item.rank_delta || 0)}>
+                            {item.rank_delta !== null ? `${item.rank_delta >= 0 ? '+' : ''}${item.rank_delta}` : '—'}
+                          </span>
+                          )
+                        </span>
+                      </div>
+                    ))}
+                    {scenarioCompare.delta.ranking.length === 0 && (
+                      <div className="text-gray-600 italic">Sem variações relevantes.</div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-3">
+                  <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-2">Mix (Δ share)</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {scenarioCompare.delta.mix.slice(0, 6).map((item) => (
+                      <div key={item.ramo} className="flex items-center justify-between text-[10px] text-gray-400">
+                        <span className="text-white font-bold">{item.ramo}</span>
+                        <span className={deltaTone(item.share_delta)}>
+                          {item.share_delta >= 0 ? '+' : ''}
+                          {(item.share_delta * 100).toFixed(1)}%
+                        </span>
+                      </div>
+                    ))}
+                    {scenarioCompare.delta.mix.length === 0 && (
+                      <div className="text-gray-600 italic">Sem variações de mix.</div>
+                    )}
+                  </div>
+                </div>
+              </div>
             )}
           </div>
         </div>
@@ -504,7 +603,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ monthRef, status, onStatusRefre
           )}
           {!rulesLoading &&
             rules.slice(0, 6).map((rule) => (
-              <div key={rule.rules_version_id} className="border border-gray-800 rounded-sm p-2">
+              <div key={rule.rules_version_id} className="border border-param-border rounded-xl p-3">
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-white">{rule.rules_version_id}</span>
                   <span className="text-[10px] text-gray-500">{rule.effective_from}</span>
@@ -518,6 +617,32 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ monthRef, status, onStatusRefre
                 <div className="flex items-center gap-2 text-[10px] text-gray-500 mt-2">
                   <Sparkles className="w-3 h-3 text-param-primary" />
                   {rule.audit_note || 'Sem audit note'}
+                </div>
+              </div>
+            ))}
+        </div>
+      </WidgetCard>
+
+      <WidgetCard title="Histórico de Cenários" className="lg:col-span-2">
+        <div className="flex flex-col gap-3 text-xs text-gray-300">
+          {scenarioHistoryLoading && <div className="text-gray-600 italic">Carregando cenários...</div>}
+          {!scenarioHistoryLoading && scenarioHistory.length === 0 && (
+            <div className="text-gray-600 italic">Nenhum cenário encontrado.</div>
+          )}
+          {!scenarioHistoryLoading &&
+            scenarioHistory.slice(0, 6).map((scenario) => (
+              <div key={scenario.scenario_id || scenario.month} className="border border-param-border rounded-xl p-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-white">{scenario.scenario_id || 'SCN'}</span>
+                  <span className="text-[10px] text-gray-500">
+                    {scenario.created_at ? new Date(scenario.created_at).toLocaleString('pt-BR') : '—'}
+                  </span>
+                </div>
+                <div className="text-[10px] text-gray-500 mt-1">
+                  Forecast: {(scenario.kpis.forecast_pct_meta * 100).toFixed(1)}%
+                </div>
+                <div className="text-[10px] text-gray-500">
+                  Gap diário: R$ {scenario.kpis.gap_diario.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
                 </div>
               </div>
             ))}

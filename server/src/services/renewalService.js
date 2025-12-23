@@ -45,21 +45,80 @@ const findSuccessor = (contract, grouped) => {
   return best;
 };
 
-const fetchContracts = async () => {
+const fetchContracts = async ({ vendorId = null, ramo = null } = {}) => {
+  const conditions = ['is_invalid = FALSE'];
+  const params = [];
+  if (vendorId) {
+    params.push(vendorId);
+    conditions.push(`vendedor_id = $${params.length}`);
+  }
+  if (ramo) {
+    params.push(ramo);
+    conditions.push(`ramo = $${params.length}`);
+  }
   const result = await query(
     `SELECT contract_id, cpf_cnpj, segurado_nome, vendedor_id, ramo, premio, comissao_valor, inicio, termino, status
      FROM contracts_norm
-     WHERE is_invalid = FALSE`
+     WHERE ${conditions.join(' AND ')}`,
+    params
   );
   return result.rows;
 };
 
-export const getRenewalMetrics = async ({ referenceDate = new Date() } = {}) => {
+const loadLatestActions = async (contractIds) => {
+  if (!contractIds.length) return new Map();
+  const result = await query(
+    `SELECT DISTINCT ON (contract_id)
+        contract_id,
+        vendedor_id,
+        action_type,
+        note,
+        created_at
+     FROM renewal_actions
+     WHERE contract_id = ANY($1)
+     ORDER BY contract_id, created_at DESC`,
+    [contractIds]
+  );
+  return new Map(result.rows.map((row) => [row.contract_id, row]));
+};
+
+const computeRenewalProbability = (daysToEnd, stage) => {
+  const normalized = String(stage || '').toUpperCase();
+  if (normalized.includes('JUSTIFIED') || normalized.includes('CANCEL') || normalized.includes('LOST')) return 0.1;
+  if (normalized.includes('RENOV') || normalized.includes('RENEW') || normalized.includes('CLOSED_WON')) return 0.95;
+  if (normalized.includes('PROPOSTA') || normalized.includes('NEGOCI')) return 0.7;
+  if (normalized.includes('CONTATO') || normalized.includes('CONTACT')) return 0.5;
+  if (normalized.includes('SEM_CONTATO') || normalized.includes('NO_CONTACT')) return 0.3;
+  if (daysToEnd <= 5) return 0.35;
+  if (daysToEnd <= 15) return 0.5;
+  if (daysToEnd <= 30) return 0.6;
+  return 0.7;
+};
+
+const enrichRenewals = (items, actionsMap) => {
+  return items.map((item) => {
+    const action = actionsMap.get(item.contract_id);
+    const stage = action?.action_type || 'SEM_ACAO';
+    const owner = action?.vendedor_id || item.vendedor_id;
+    const probability = computeRenewalProbability(item.days_to_end, stage);
+    const comissao = Number(item.comissao_valor || 0);
+    const impactScore = comissao * (1 - probability);
+    return {
+      ...item,
+      stage,
+      owner,
+      renewal_probability: Number(probability.toFixed(2)),
+      impact_score: Number(impactScore.toFixed(2))
+    };
+  });
+};
+
+export const getRenewalMetrics = async ({ referenceDate = new Date(), vendorId = null, ramo = null } = {}) => {
   const reference = toDateOnly(referenceDate);
   logInfo('renewal', 'Calculando semaforo de renovacao', {
     referencia: reference ? reference.toISOString().slice(0, 10) : null
   });
-  const contracts = await fetchContracts();
+  const contracts = await fetchContracts({ vendorId, ramo });
   if (contracts.length === 0) {
     logWarn('renewal', 'Nenhum contrato disponivel para renovacao');
   }
@@ -69,6 +128,7 @@ export const getRenewalMetrics = async ({ referenceDate = new Date() } = {}) => 
   const d5 = [];
   const d7 = [];
   const d15 = [];
+  const d30 = [];
   const black = [];
 
   for (const contract of contracts) {
@@ -87,6 +147,8 @@ export const getRenewalMetrics = async ({ referenceDate = new Date() } = {}) => 
       d7.push({ ...contract, days_to_end: days });
     } else if (days <= 15 && days > 7) {
       d15.push({ ...contract, days_to_end: days });
+    } else if (days <= 30 && days > 15) {
+      d30.push({ ...contract, days_to_end: days });
     }
 
     if (days < 0 && (graceDays === 0 || days < -graceDays)) {
@@ -94,33 +156,52 @@ export const getRenewalMetrics = async ({ referenceDate = new Date() } = {}) => 
     }
   }
 
+  const actionsMap = await loadLatestActions([
+    ...d5.map((item) => item.contract_id),
+    ...d7.map((item) => item.contract_id),
+    ...d15.map((item) => item.contract_id),
+    ...d30.map((item) => item.contract_id)
+  ]);
+
+  const d5Enriched = enrichRenewals(d5, actionsMap);
+  const d7Enriched = enrichRenewals(d7, actionsMap);
+  const d15Enriched = enrichRenewals(d15, actionsMap);
+  const d30Enriched = enrichRenewals(d30, actionsMap);
+
   const sortByPriority = (a, b) => {
+    const impactDiff = Number(b.impact_score || 0) - Number(a.impact_score || 0);
+    if (impactDiff !== 0) return impactDiff;
     if (a.days_to_end !== b.days_to_end) return a.days_to_end - b.days_to_end;
     return Number(b.comissao_valor || 0) - Number(a.comissao_valor || 0);
   };
 
-  d5.sort(sortByPriority);
-  d7.sort(sortByPriority);
-  d15.sort(sortByPriority);
+  d5Enriched.sort(sortByPriority);
+  d7Enriched.sort(sortByPriority);
+  d15Enriched.sort(sortByPriority);
+  d30Enriched.sort(sortByPriority);
 
-  const d5Risk = d5.reduce((sum, item) => sum + Number(item.comissao_valor || 0), 0);
-  const d7Risk = d7.reduce((sum, item) => sum + Number(item.comissao_valor || 0), 0);
-  const d15Risk = d15.reduce((sum, item) => sum + Number(item.comissao_valor || 0), 0);
+  const d5Risk = d5Enriched.reduce((sum, item) => sum + Number(item.comissao_valor || 0), 0);
+  const d7Risk = d7Enriched.reduce((sum, item) => sum + Number(item.comissao_valor || 0), 0);
+  const d15Risk = d15Enriched.reduce((sum, item) => sum + Number(item.comissao_valor || 0), 0);
+  const d30Risk = d30Enriched.reduce((sum, item) => sum + Number(item.comissao_valor || 0), 0);
 
   logInfo('renewal', 'Resumo TLP', {
-    d5: d5.length,
-    d7: d7.length,
-    d15: d15.length,
+    d5: d5Enriched.length,
+    d7: d7Enriched.length,
+    d15: d15Enriched.length,
+    d30: d30Enriched.length,
     black: black.length
   });
 
   return {
-    d5,
-    d7,
-    d15,
+    d5: d5Enriched,
+    d7: d7Enriched,
+    d15: d15Enriched,
+    d30: d30Enriched,
     d5Risk,
     d7Risk,
     d15Risk,
+    d30Risk,
     black,
     blackListCount: black.length
   };
@@ -147,9 +228,10 @@ export const getVendorPenaltyMap = async (monthRef) => {
   return map;
 };
 
-export const listRenewals = async ({ windowDays = 15 }) => {
-  const metrics = await getRenewalMetrics();
+export const listRenewals = async ({ windowDays = 15, vendorId = null, ramo = null } = {}) => {
+  const metrics = await getRenewalMetrics({ vendorId, ramo });
   if (windowDays <= 5) return metrics.d5;
   if (windowDays <= 7) return metrics.d7;
-  return metrics.d15;
+  if (windowDays <= 15) return metrics.d15;
+  return metrics.d30;
 };

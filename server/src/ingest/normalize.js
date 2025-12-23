@@ -58,7 +58,7 @@ export const normalizeZohoRecord = (record) => {
   const produtoRaw = getField(record, config.zohoFields.produto);
   const seguradora = getField(record, config.zohoFields.seguradora) || '';
   const cidade = getField(record, config.zohoFields.cidade) || null;
-  const vendedorId = resolveVendorId(record);
+  const vendedorId = resolveVendorId(record) || 'unknown';
   const dataEfetivacao = toDateOnly(getField(record, config.zohoFields.dataEfetivacao));
   const inicio = toDateOnly(getField(record, config.zohoFields.inicio));
   const termino = toDateOnly(getField(record, config.zohoFields.termino));

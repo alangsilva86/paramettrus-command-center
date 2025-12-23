@@ -6,6 +6,9 @@ import { ResponsiveContainer, ScatterChart, Scatter, XAxis, YAxis, Tooltip, Cell
 interface ZoneStrategyProps {
   data: DashboardSnapshot | null;
   crossSell: {
+    totalCustomers: number;
+    monoprodutoCount: number;
+    multiProdutoCount: number;
     monoprodutoPct: number;
     autoVidaCount: number;
     autoSemVidaCount: number;
@@ -37,20 +40,30 @@ const ZoneStrategy: React.FC<ZoneStrategyProps> = ({ data, crossSell }) => {
   if (!data) return null;
 
   const { radar, kpis } = data;
+  const mix = data.mix || { products: [], insurers: [], matrix: [] };
   
   // Monoculture Risk
   const autoPct = Math.round(kpis.auto_share_comissao * 100);
-  const otherPct = 100 - autoPct;
   const isMonocultureRisk = autoPct > 60;
 
   // Formatting for Bubble Chart
   // We want Auto to be distinct color
+  const formatShare = (value: number) => `${(value * 100).toFixed(0)}%`;
+  const formatDelta = (value: number) => `${value >= 0 ? '+' : ''}${(value * 100).toFixed(1)}%`;
+  const deltaClass = (value: number) =>
+    value > 0 ? 'text-param-success' : value < 0 ? 'text-param-danger' : 'text-gray-500';
+
+  const matrixGroups = mix.matrix.reduce<Record<string, typeof mix.matrix>>((acc, item) => {
+    if (!acc[item.quadrant]) acc[item.quadrant] = [];
+    acc[item.quadrant].push(item);
+    return acc;
+  }, {});
   
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 h-full">
+    <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 h-full">
       
       {/* Widget F: Radar Bubble Chart (Product Mix) */}
-      <WidgetCard title="Radar de Mix (Estratégia)" className="md:col-span-2">
+      <WidgetCard title="Radar de Mix (Estratégia)" className="lg:col-span-2">
         <div className="w-full h-[220px] min-h-[220px] min-w-[260px]">
           <ResponsiveContainer width="100%" height="100%" minWidth={260} minHeight={220}>
             <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 10 }}>
@@ -82,10 +95,10 @@ const ZoneStrategy: React.FC<ZoneStrategyProps> = ({ data, crossSell }) => {
               
               <Scatter name="Produtos" data={radar.bubble_products}>
                 {radar.bubble_products.map((entry, index) => (
-                  <Cell 
-                    key={`cell-${index}`} 
-                    fill={entry.ramo === 'AUTO' ? '#5A4BE3' : '#FF6B06'} 
-                    fillOpacity={0.8}
+                  <Cell
+                    key={`cell-${index}`}
+                    fill={entry.ramo === 'AUTO' ? '#05400B' : '#0B7F16'}
+                    fillOpacity={0.75}
                   />
                 ))}
               </Scatter>
@@ -124,7 +137,7 @@ const ZoneStrategy: React.FC<ZoneStrategyProps> = ({ data, crossSell }) => {
           </div>
 
           {/* Pareto (Simplified for UI) */}
-          <div className="border-t border-gray-800 pt-4">
+          <div className="border-t border-param-border pt-4">
              <div className="flex justify-between text-[10px] text-gray-400 mb-1 uppercase">
                 <span>Top 1 Seguradora</span>
                 <span>{(radar.top_insurer_share * 100).toFixed(0)}%</span>
@@ -132,7 +145,7 @@ const ZoneStrategy: React.FC<ZoneStrategyProps> = ({ data, crossSell }) => {
             <div className="w-full h-2 bg-gray-800 rounded overflow-hidden">
                 <div 
                     style={{ width: `${radar.top_insurer_share * 100}%` }} 
-                    className={`h-full ${radar.top_insurer_share > 0.4 ? 'bg-yellow-500' : 'bg-gray-500'}`}
+                    className={`h-full ${radar.top_insurer_share > 0.4 ? 'bg-param-warning' : 'bg-gray-500'}`}
                 />
             </div>
           </div>
@@ -144,36 +157,117 @@ const ZoneStrategy: React.FC<ZoneStrategyProps> = ({ data, crossSell }) => {
         </div>
       </WidgetCard>
 
-      {/* Widget H: Cross-sell Radar (Auto sem Vida) */}
-      <WidgetCard title="Cross-sell (Auto sem Vida)" className="md:col-span-3">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* Widget H: Mix por Produto */}
+      <WidgetCard title="Mix por Produto" className="lg:col-span-1">
+        <div className="flex flex-col gap-2 text-xs text-gray-300">
+          {mix.products.slice(0, 6).map((item) => (
+            <div key={item.ramo} className="border-b border-param-border pb-2">
+              <div className="flex justify-between items-center">
+                <span className="font-bold text-white">{item.ramo}</span>
+                <span className={`text-[10px] ${deltaClass(item.mom_share_delta)}`}>
+                  {formatDelta(item.mom_share_delta)}
+                </span>
+              </div>
+              <div className="text-[10px] text-gray-500">
+                Share {formatShare(item.share_comissao)} · Risco {(item.risk_pct * 100).toFixed(0)}%
+              </div>
+            </div>
+          ))}
+          {mix.products.length === 0 && <div className="text-gray-600 italic">Sem dados de mix.</div>}
+        </div>
+      </WidgetCard>
+
+      {/* Widget I: Mix por Seguradora */}
+      <WidgetCard title="Mix por Seguradora" className="lg:col-span-2">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs text-gray-300">
+          {mix.insurers.map((item) => (
+            <div key={item.seguradora} className="border-b border-param-border pb-2">
+              <div className="flex justify-between items-center">
+                <span className="font-bold text-white">{item.seguradora}</span>
+                <span className={`text-[10px] ${deltaClass(item.mom_share_delta)}`}>
+                  {formatDelta(item.mom_share_delta)}
+                </span>
+              </div>
+              <div className="text-[10px] text-gray-500">
+                Share {formatShare(item.share_comissao)} · Margem {item.margem_pct.toFixed(1)}%
+              </div>
+            </div>
+          ))}
+          {mix.insurers.length === 0 && <div className="text-gray-600 italic">Sem dados de seguradoras.</div>}
+        </div>
+      </WidgetCard>
+
+      {/* Widget J: Matriz Margem x Volume x Risco */}
+      <WidgetCard title="Matriz Margem x Volume" className="lg:col-span-2">
+        <div className="grid grid-cols-2 gap-3 text-[10px] text-gray-400">
+          {[
+            { key: 'HIGH_MARGIN_HIGH_VOLUME', label: 'Alta margem · Alto volume' },
+            { key: 'HIGH_MARGIN_LOW_VOLUME', label: 'Alta margem · Baixo volume' },
+            { key: 'LOW_MARGIN_HIGH_VOLUME', label: 'Baixa margem · Alto volume' },
+            { key: 'LOW_MARGIN_LOW_VOLUME', label: 'Baixa margem · Baixo volume' }
+          ].map((group) => (
+            <div key={group.key} className="border border-param-border rounded-xl p-3">
+              <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-2">
+                {group.label}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {(matrixGroups[group.key] || []).map((item) => (
+                  <span
+                    key={item.ramo}
+                    className={`px-2 py-1 rounded-full border ${
+                      item.risk_pct > 0.2 ? 'border-param-danger text-param-danger' : 'border-param-border text-gray-300'
+                    }`}
+                  >
+                    {item.ramo}
+                  </span>
+                ))}
+                {(matrixGroups[group.key] || []).length === 0 && (
+                  <span className="text-gray-600 italic">Sem itens</span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </WidgetCard>
+
+      {/* Widget K: Cross-sell Radar (Auto sem Vida) */}
+      <WidgetCard title="Cross-sell (Auto sem Vida)" className="lg:col-span-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="text-xs text-gray-400">
-            <div className="mb-2">
-              <div className="text-[10px] uppercase tracking-widest text-gray-500">Monoproduto</div>
-              <div className="text-2xl font-black text-white">
-                {Math.round((crossSell?.monoprodutoPct || 0) * 100)}%
+            <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-2">Funil</div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span>Total clientes</span>
+                <span className="text-white font-bold">{crossSell?.totalCustomers ?? 0}</span>
               </div>
-            </div>
-            <div className="mb-2">
-              <div className="text-[10px] uppercase tracking-widest text-gray-500">Auto + Vida</div>
-              <div className="text-xl font-bold text-param-success">
-                {crossSell?.autoVidaCount ?? 0}
+              <div className="flex items-center justify-between">
+                <span>Monoproduto</span>
+                <span className="text-white font-bold">{crossSell?.monoprodutoCount ?? 0}</span>
               </div>
-            </div>
-            <div>
-              <div className="text-[10px] uppercase tracking-widest text-gray-500">Auto sem Vida</div>
-              <div className="text-xl font-bold text-param-danger">
-                {crossSell?.autoSemVidaCount ?? 0}
+              <div className="flex items-center justify-between">
+                <span>Multiproduto</span>
+                <span className="text-param-success font-bold">{crossSell?.multiProdutoCount ?? 0}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Auto + Vida</span>
+                <span className="text-param-success font-bold">{crossSell?.autoVidaCount ?? 0}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Auto sem Vida</span>
+                <span className="text-param-danger font-bold">{crossSell?.autoSemVidaCount ?? 0}</span>
+              </div>
+              <div className="text-[10px] text-gray-600 pt-2 border-t border-param-border">
+                Monoproduto {Math.round((crossSell?.monoprodutoPct || 0) * 100)}%
               </div>
             </div>
           </div>
-          <div className="md:col-span-2">
+          <div className="md:col-span-3">
             <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-2">
               Prioridade por Comissão Potencial
             </div>
             <div className="space-y-2 max-h-40 overflow-y-auto pr-2 brutal-scroll">
               {(crossSell?.autoSemVida || []).slice(0, 8).map((item) => (
-                <div key={item.cpf_cnpj} className="flex justify-between items-center border-b border-gray-800 pb-1 text-xs">
+                <div key={item.cpf_cnpj} className="flex justify-between items-center border-b border-param-border pb-1 text-xs">
                   <div>
                     <div className="text-white font-bold">{item.segurado_nome || item.cpf_cnpj}</div>
                     <div className="text-gray-500">{item.cpf_cnpj}</div>

@@ -3,6 +3,7 @@ import {
   AdminRulesCreateResponse,
   CrossSellSummary,
   DashboardSnapshot,
+  SnapshotCompare,
   RenewalListItem,
   RulesVersionItem,
   StatusResponse
@@ -10,8 +11,14 @@ import {
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
-export const fetchDashboardSnapshot = async (monthRef: string): Promise<DashboardSnapshot> => {
-  const response = await fetch(`${API_BASE}/api/snapshots/month?yyyy_mm=${encodeURIComponent(monthRef)}`);
+export const fetchDashboardSnapshot = async (
+  monthRef: string,
+  filters?: { vendorId?: string; ramo?: string }
+): Promise<DashboardSnapshot> => {
+  const params = new URLSearchParams({ yyyy_mm: monthRef });
+  if (filters?.vendorId) params.set('vendedor_id', filters.vendorId);
+  if (filters?.ramo) params.set('ramo', filters.ramo);
+  const response = await fetch(`${API_BASE}/api/snapshots/month?${params.toString()}`);
   if (!response.ok) {
     throw new Error('Falha ao carregar snapshot');
   }
@@ -32,8 +39,14 @@ export const fetchScenarioSnapshot = async (
   return response.json();
 };
 
-export const fetchRenewalList = async (windowDays: number): Promise<RenewalListItem[]> => {
-  const response = await fetch(`${API_BASE}/api/renewals/list?window=${windowDays}`);
+export const fetchRenewalList = async (
+  windowDays: number,
+  filters?: { vendorId?: string; ramo?: string }
+): Promise<RenewalListItem[]> => {
+  const params = new URLSearchParams({ window: String(windowDays) });
+  if (filters?.vendorId) params.set('vendedor_id', filters.vendorId);
+  if (filters?.ramo) params.set('ramo', filters.ramo);
+  const response = await fetch(`${API_BASE}/api/renewals/list?${params.toString()}`);
   if (!response.ok) {
     throw new Error('Falha ao carregar renovações');
   }
@@ -41,8 +54,15 @@ export const fetchRenewalList = async (windowDays: number): Promise<RenewalListI
   return payload.items || [];
 };
 
-export const fetchCrossSellSummary = async (): Promise<CrossSellSummary> => {
-  const response = await fetch(`${API_BASE}/api/cross-sell/auto-sem-vida`);
+export const fetchCrossSellSummary = async (
+  filters?: { vendorId?: string; ramo?: string }
+): Promise<CrossSellSummary> => {
+  const params = new URLSearchParams();
+  if (filters?.vendorId) params.set('vendedor_id', filters.vendorId);
+  if (filters?.ramo) params.set('ramo', filters.ramo);
+  const response = await fetch(
+    `${API_BASE}/api/cross-sell/auto-sem-vida${params.toString() ? `?${params.toString()}` : ''}`
+  );
   if (!response.ok) {
     throw new Error('Falha ao carregar cross-sell');
   }
@@ -55,6 +75,28 @@ export const fetchStatus = async (): Promise<StatusResponse> => {
     throw new Error('Falha ao carregar status');
   }
   return response.json();
+};
+
+export const fetchSnapshotCompare = async (
+  monthRef: string,
+  scenarioId: string
+): Promise<SnapshotCompare> => {
+  const params = new URLSearchParams({ yyyy_mm: monthRef, scenario_id: scenarioId });
+  const response = await fetch(`${API_BASE}/api/snapshots/compare?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error('Falha ao comparar cenários');
+  }
+  return response.json();
+};
+
+export const fetchScenarioHistory = async (monthRef: string): Promise<DashboardSnapshot[]> => {
+  const params = new URLSearchParams({ yyyy_mm: monthRef });
+  const response = await fetch(`${API_BASE}/api/snapshots/scenarios?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error('Falha ao carregar histórico de cenários');
+  }
+  const payload = await response.json();
+  return payload.items || [];
 };
 
 const buildAdminHeaders = (token?: string, actor?: string) => {
