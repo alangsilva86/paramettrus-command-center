@@ -41,6 +41,7 @@ const CommandBar: React.FC<CommandBarProps> = ({
   lastUpdateLabel,
   qualityLabel,
   qualityStatus,
+  qualityReason,
   exceptionsCount,
   onSync,
   onOpenExceptions,
