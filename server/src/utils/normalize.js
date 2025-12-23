@@ -24,24 +24,22 @@ export const normalizeMoney = (value) => {
 };
 
 export const normalizeRamo = (produtoRaw) => {
+  if (!produtoRaw) return { produto: null, ramo: null };
   const normalized = normalizeText(produtoRaw);
   if (!normalized) return { produto: null, ramo: null };
 
-  if (['AUTO', 'AUTOMOVEL', 'AUTOMOVEL', 'AUTOMÓVEL', 'VEICULO', 'VEICULO'].includes(normalized)) {
-    return { produto: 'Automovel', ramo: 'AUTO' };
-  }
-  if (normalized.includes('VIDA')) {
-    return { produto: 'Vida', ramo: 'VIDA' };
-  }
-  if (normalized.includes('RESID')) {
-    return { produto: 'Residencial', ramo: 'RESID' };
-  }
-  if (normalized.includes('EMP')) {
-    return { produto: 'Empresarial', ramo: 'EMP' };
-  }
-  if (normalized.includes('COND')) {
-    return { produto: 'Condominio', ramo: 'COND' };
+  let ramo = 'OUTROS';
+  if (['AUTO', 'AUTOMOVEL', 'VEICULO'].includes(normalized)) {
+    ramo = 'AUTO';
+  } else if (normalized.includes('VIDA')) {
+    ramo = 'VIDA';
+  } else if (normalized.includes('RESID')) {
+    ramo = 'RESID';
+  } else if (normalized.includes('EMP')) {
+    ramo = 'EMP';
+  } else if (normalized.includes('COND')) {
+    ramo = 'COND';
   }
 
-  return { produto: 'Outros', ramo: 'OUTROS' };
+  return { produto: String(produtoRaw).trim(), ramo };
 };

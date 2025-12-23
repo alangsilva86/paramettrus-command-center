@@ -2,10 +2,15 @@ import { query, withClient } from '../db.js';
 import { sha256 } from '../utils/hash.js';
 import { normalizeZohoRecord } from './normalize.js';
 import { fetchZohoReport, withRetry } from './zohoClient.js';
-import { formatDate } from '../utils/date.js';
+import { addDays, formatDate, toDateOnly } from '../utils/date.js';
 import { logError, logInfo, logSuccess, logWarn } from '../utils/logger.js';
 
 const SOURCE = 'zoho';
+const DEFAULT_LOOKBACK_DAYS = 7;
+
+const buildCriteria = (field, start, end) => {
+  return `(${field} >= "${start}" && ${field} <= "${end}")`;
+};
 
 const insertIngestionRun = async (client, startedAt) => {
   const result = await client.query(
@@ -64,22 +69,91 @@ const insertRawPayload = async (client, record, fetchedAt) => {
 
 const getExistingRowInfo = async (client, contractId) => {
   const result = await client.query(
-    'SELECT row_hash, vendedor_id FROM contracts_norm WHERE contract_id = $1 LIMIT 1',
+    'SELECT row_hash, vendedor_id, modified_time, added_time FROM contracts_norm WHERE contract_id = $1 LIMIT 1',
     [contractId]
   );
   if (result.rowCount === 0) return null;
   return {
     rowHash: result.rows[0].row_hash,
-    vendedorId: result.rows[0].vendedor_id
+    vendedorId: result.rows[0].vendedor_id,
+    modifiedTime: result.rows[0].modified_time,
+    addedTime: result.rows[0].added_time
   };
 };
 
-const rowHashExistsInMonth = async (client, rowHash, monthRef) => {
+const resolveTimestamp = (record) => {
+  const value =
+    record?.modified_time ??
+    record?.modifiedTime ??
+    record?.added_time ??
+    record?.addedTime ??
+    null;
+  if (!value) return null;
+  const ts = new Date(value).getTime();
+  return Number.isNaN(ts) ? null : ts;
+};
+
+const isIncomingNewer = (incoming, existing) => {
+  const incomingTs = resolveTimestamp(incoming);
+  const existingTs = resolveTimestamp(existing);
+  if (incomingTs && existingTs) return incomingTs > existingTs;
+  if (incomingTs && !existingTs) return true;
+  if (!incomingTs && existingTs) return false;
+  return false;
+};
+
+const getLatestByRowHash = async (client, rowHash) => {
   const result = await client.query(
-    'SELECT 1 FROM contracts_norm WHERE row_hash = $1 AND month_ref = $2 LIMIT 1',
-    [rowHash, monthRef]
+    `SELECT contract_id, modified_time, added_time
+     FROM contracts_norm
+     WHERE row_hash = $1
+     ORDER BY modified_time DESC NULLS LAST, added_time DESC NULLS LAST, created_at DESC
+     LIMIT 1`,
+    [rowHash]
   );
-  return result.rowCount > 0;
+  if (result.rowCount === 0) return null;
+  return {
+    contract_id: result.rows[0].contract_id,
+    modified_time: result.rows[0].modified_time,
+    added_time: result.rows[0].added_time
+  };
+};
+
+const purgeDuplicatesByRowHash = async (client, rowHash, keepContractId) => {
+  const result = await client.query(
+    `DELETE FROM contracts_norm
+     WHERE row_hash = $1 AND contract_id <> $2`,
+    [rowHash, keepContractId]
+  );
+  return result.rowCount || 0;
+};
+
+const resolveIncrementalCriteria = async (client) => {
+  if (config.ingest?.mode !== 'incremental') return null;
+  const lookbackDays = Number(
+    config.ingest.incrementalLookbackDays || DEFAULT_LOOKBACK_DAYS
+  );
+  const safeLookback = Number.isFinite(lookbackDays) && lookbackDays > 0 ? lookbackDays : DEFAULT_LOOKBACK_DAYS;
+  const result = await client.query(
+    'SELECT MAX(modified_time) AS last_modified FROM contracts_norm'
+  );
+  const lastModified = result.rows[0]?.last_modified || null;
+  const today = toDateOnly(new Date());
+  const fromBase = lastModified ? toDateOnly(lastModified) : today;
+  if (!lastModified) {
+    logWarn('ingest', 'Incremental sem baseline; usando janela de lookback', {
+      lookback_days: safeLookback
+    });
+  }
+  const fromDate = fromBase ? addDays(fromBase, -safeLookback) : null;
+  if (!fromDate || !today) return null;
+  const field = config.zohoFields.modifiedTime || 'Modified_Time';
+  return {
+    criteria: buildCriteria(field, formatDate(fromDate), formatDate(today)),
+    field,
+    from: formatDate(fromDate),
+    to: formatDate(today)
+  };
 };
 
 const insertNormalized = async (client, contract) => {
@@ -95,6 +169,8 @@ const insertNormalized = async (client, contract) => {
     'data_efetivacao',
     'inicio',
     'termino',
+    'added_time',
+    'modified_time',
     'status',
     'premio',
     'comissao_pct',
@@ -104,6 +180,8 @@ const insertNormalized = async (client, contract) => {
     'is_synthetic_id',
     'is_incomplete',
     'is_invalid',
+    'quality_flags',
+    'needs_review',
     'month_ref'
   ];
 
@@ -119,6 +197,8 @@ const insertNormalized = async (client, contract) => {
     contract.data_efetivacao,
     contract.inicio,
     contract.termino,
+    contract.added_time,
+    contract.modified_time,
     contract.status,
     contract.premio,
     contract.comissao_pct,
@@ -128,6 +208,8 @@ const insertNormalized = async (client, contract) => {
     contract.is_synthetic_id,
     contract.is_incomplete,
     contract.is_invalid,
+    contract.quality_flags,
+    contract.needs_review,
     contract.month_ref
   ];
 
@@ -152,6 +234,8 @@ const updateNormalized = async (client, contract) => {
     'data_efetivacao',
     'inicio',
     'termino',
+    'added_time',
+    'modified_time',
     'status',
     'premio',
     'comissao_pct',
@@ -161,6 +245,8 @@ const updateNormalized = async (client, contract) => {
     'is_synthetic_id',
     'is_incomplete',
     'is_invalid',
+    'quality_flags',
+    'needs_review',
     'month_ref'
   ];
 
@@ -175,6 +261,8 @@ const updateNormalized = async (client, contract) => {
     contract.data_efetivacao,
     contract.inicio,
     contract.termino,
+    contract.added_time,
+    contract.modified_time,
     contract.status,
     contract.premio,
     contract.comissao_pct,
@@ -184,6 +272,8 @@ const updateNormalized = async (client, contract) => {
     contract.is_synthetic_id,
     contract.is_incomplete,
     contract.is_invalid,
+    contract.quality_flags,
+    contract.needs_review,
     contract.month_ref,
     contract.contract_id
   ];
@@ -261,7 +351,20 @@ export const runIngestion = async () => {
 
     let records = [];
     try {
-      records = await withRetry(() => fetchZohoReport(), 3, (error) => error?.code !== 'ZOHO_AUTH_401');
+      const incremental = await resolveIncrementalCriteria(client);
+      const criteria = incremental ? incremental.criteria : null;
+      if (incremental) {
+        logInfo('ingest', 'Modo incremental ativo', {
+          field: incremental.field,
+          from: incremental.from,
+          to: incremental.to
+        });
+      }
+      records = await withRetry(
+        () => fetchZohoReport({ criteria }),
+        3,
+        (error) => error?.code !== 'ZOHO_AUTH_401'
+      );
     } catch (error) {
       const isAuthError = error?.code === 'ZOHO_AUTH_401' || error?.status === 401;
       const status = isAuthError ? 'FAILED' : 'STALE_DATA';
@@ -302,29 +405,42 @@ export const runIngestion = async () => {
         if (normalized.is_incomplete) incompleteCount += 1;
         if (normalized.is_invalid) invalidCount += 1;
 
-        if (!normalized.is_synthetic_id) {
-          const existing = await getExistingRowInfo(client, normalized.contract_id);
-          if (existing) {
-            const needsVendorUpdate = !existing.vendedorId || existing.vendedorId === '';
-            if (existing.rowHash === normalized.row_hash && !needsVendorUpdate) {
-              duplicatesCount += 1;
-              continue;
-            }
-            await updateNormalized(client, normalized);
-            updatedNormCount += 1;
-            if (normalized.cpf_cnpj) touchedCpfs.push(normalized.cpf_cnpj);
-            continue;
-          }
-        } else {
-          const dup = await rowHashExistsInMonth(client, normalized.row_hash, normalized.month_ref);
-          if (dup) {
+        const fingerprint = await getLatestByRowHash(client, normalized.row_hash);
+        if (fingerprint && fingerprint.contract_id !== normalized.contract_id) {
+          const incomingNewer = isIncomingNewer(normalized, fingerprint);
+          if (!incomingNewer) {
             duplicatesCount += 1;
             continue;
           }
         }
 
-        await insertNormalized(client, normalized);
-        insertedNormCount += 1;
+        const existing = await getExistingRowInfo(client, normalized.contract_id);
+        if (existing) {
+          const needsVendorUpdate = !existing.vendedorId || existing.vendedorId === '';
+          const normalizedTs = resolveTimestamp(normalized);
+          const existingTs = resolveTimestamp(existing);
+          const needsModifiedUpdate =
+            normalizedTs && (!existingTs || normalizedTs > existingTs);
+          if (existing.rowHash === normalized.row_hash && !needsVendorUpdate && !needsModifiedUpdate) {
+            duplicatesCount += 1;
+            continue;
+          }
+          await updateNormalized(client, normalized);
+          updatedNormCount += 1;
+        } else {
+          await insertNormalized(client, normalized);
+          insertedNormCount += 1;
+        }
+
+        if (fingerprint) {
+          const removed = await purgeDuplicatesByRowHash(
+            client,
+            normalized.row_hash,
+            normalized.contract_id
+          );
+          if (removed > 0) duplicatesCount += removed;
+        }
+
         if (normalized.cpf_cnpj) touchedCpfs.push(normalized.cpf_cnpj);
       }
 

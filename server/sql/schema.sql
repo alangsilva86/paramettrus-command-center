@@ -28,14 +28,23 @@ CREATE TABLE IF NOT EXISTS contracts_norm (
   premio NUMERIC(14,2),
   comissao_pct NUMERIC(8,4),
   comissao_valor NUMERIC(14,2),
+  added_time TIMESTAMPTZ,
+  modified_time TIMESTAMPTZ,
   row_hash TEXT NOT NULL,
   dedup_group TEXT NOT NULL,
   is_synthetic_id BOOLEAN NOT NULL DEFAULT FALSE,
   is_incomplete BOOLEAN NOT NULL DEFAULT FALSE,
   is_invalid BOOLEAN NOT NULL DEFAULT FALSE,
+  quality_flags TEXT[],
+  needs_review BOOLEAN NOT NULL DEFAULT FALSE,
   month_ref TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE contracts_norm ADD COLUMN IF NOT EXISTS added_time TIMESTAMPTZ;
+ALTER TABLE contracts_norm ADD COLUMN IF NOT EXISTS modified_time TIMESTAMPTZ;
+ALTER TABLE contracts_norm ADD COLUMN IF NOT EXISTS quality_flags TEXT[];
+ALTER TABLE contracts_norm ADD COLUMN IF NOT EXISTS needs_review BOOLEAN NOT NULL DEFAULT FALSE;
 
 CREATE INDEX IF NOT EXISTS idx_contracts_norm_month ON contracts_norm (month_ref);
 CREATE INDEX IF NOT EXISTS idx_contracts_norm_rowhash ON contracts_norm (row_hash, month_ref);

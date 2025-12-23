@@ -36,10 +36,17 @@ export const config = {
   ingest: {
     renewalGraceDays: Number(process.env.RENEWAL_GRACE_DAYS || 30),
     defaultCurveId: process.env.DEFAULT_CURVE_ID || 'curve_default',
+    mode: process.env.INGEST_MODE || 'incremental',
+    incrementalLookbackDays: Number(process.env.INGEST_INCREMENTAL_LOOKBACK_DAYS || 7),
     lockedMonths: (process.env.LOCKED_MONTHS || '')
       .split(',')
       .map((v) => v.trim())
       .filter(Boolean)
+  },
+  quality: {
+    maxEffectiveDeltaDays: Number(process.env.QUALITY_MAX_EFFECTIVE_DELTA_DAYS || 7),
+    comissaoPctMin: Number(process.env.QUALITY_COMISSAO_PCT_MIN || 0.0001),
+    comissaoPctMax: Number(process.env.QUALITY_COMISSAO_PCT_MAX || 0.5)
   },
   zohoFields: {
     contractId: process.env.ZOHO_FIELD_CONTRACT_ID || 'ID',
@@ -56,6 +63,7 @@ export const config = {
     comissaoValor: process.env.ZOHO_FIELD_COMISSAO_VALOR || 'contract_commission_amount',
     comissaoPct: process.env.ZOHO_FIELD_COMISSAO_PCT || 'contract_commission_percent',
     status: process.env.ZOHO_FIELD_STATUS || 'contract_status',
+    addedTime: process.env.ZOHO_FIELD_ADDED_TIME || 'Added_Time',
     modifiedTime: process.env.ZOHO_FIELD_MODIFIED_TIME || 'Modified_Time'
   },
   contractStatus: (() => {

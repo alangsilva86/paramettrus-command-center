@@ -1,7 +1,9 @@
 import { config } from '../config.js';
 import { sha256 } from '../utils/hash.js';
+import { aliasMaps, applyAlias } from '../utils/aliases.js';
+import { isValidCpfCnpj } from '../utils/cpfCnpj.js';
 import { normalizeCpfCnpj, normalizeMoney, normalizeRamo } from '../utils/normalize.js';
-import { formatDate, formatMonthRef, toDateOnly } from '../utils/date.js';
+import { daysDiff, formatDate, formatMonthRef, toDateOnly, toDateTime } from '../utils/date.js';
 
 const requiredFields = [
   'cpf_cnpj',
@@ -56,18 +58,22 @@ export const normalizeZohoRecord = (record) => {
   const cpfCnpj = normalizeCpfCnpj(getField(record, config.zohoFields.cpfCnpj));
   const seguradoNome = getField(record, config.zohoFields.seguradoNome) || record.segurado_nome || '';
   const produtoRaw = getField(record, config.zohoFields.produto);
-  const seguradora = getField(record, config.zohoFields.seguradora) || '';
+  const seguradoraRaw = getField(record, config.zohoFields.seguradora) || '';
   const cidade = getField(record, config.zohoFields.cidade) || null;
   const vendedorId = resolveVendorId(record) || 'unknown';
   const dataEfetivacao = toDateOnly(getField(record, config.zohoFields.dataEfetivacao));
   const inicio = toDateOnly(getField(record, config.zohoFields.inicio));
   const termino = toDateOnly(getField(record, config.zohoFields.termino));
+  const addedTime = toDateTime(getField(record, config.zohoFields.addedTime));
+  const modifiedTime = toDateTime(getField(record, config.zohoFields.modifiedTime));
   const premio = normalizeMoney(getField(record, config.zohoFields.premio));
   const comissaoValor = normalizeMoney(getField(record, config.zohoFields.comissaoValor));
   const comissaoPctRaw = normalizeMoney(getField(record, config.zohoFields.comissaoPct));
   const comissaoPct = comissaoPctRaw !== null && comissaoPctRaw > 1 ? comissaoPctRaw / 100 : comissaoPctRaw;
 
-  const { produto, ramo } = normalizeRamo(produtoRaw);
+  const produtoAliased = applyAlias(produtoRaw, aliasMaps.produto);
+  const seguradora = applyAlias(seguradoraRaw, aliasMaps.seguradora) || '';
+  const { produto, ramo } = normalizeRamo(produtoAliased);
 
   const effectiveDate = dataEfetivacao || inicio;
   const dataEfetivacaoISO = formatDate(effectiveDate);
@@ -94,6 +100,37 @@ export const normalizeZohoRecord = (record) => {
   const statusRaw = getField(record, config.zohoFields.status) || record.status || record.Status || 'vigente';
   const statusNormalized = String(statusRaw || 'vigente').trim().toLowerCase();
 
+  const comissaoPctValue =
+    comissaoPct ?? (premio && comissaoValor ? comissaoValor / premio : null);
+
+  const qualityFlags = [];
+  const cpfValid = cpfCnpj ? isValidCpfCnpj(cpfCnpj) : false;
+  if (cpfCnpj && !cpfValid) qualityFlags.push('cpf_cnpj_invalid');
+  if (inicio && termino && termino < inicio) qualityFlags.push('inicio_after_termino');
+  const gapDays =
+    dataEfetivacao && inicio ? Math.abs(daysDiff(inicio, dataEfetivacao)) : null;
+  if (
+    gapDays !== null &&
+    Number.isFinite(config.quality?.maxEffectiveDeltaDays) &&
+    gapDays > config.quality.maxEffectiveDeltaDays
+  ) {
+    qualityFlags.push('efetivacao_inicio_gap');
+  }
+  if (
+    comissaoPctValue !== null &&
+    Number.isFinite(config.quality?.comissaoPctMin) &&
+    comissaoPctValue < config.quality.comissaoPctMin
+  ) {
+    qualityFlags.push('comissao_pct_low');
+  }
+  if (
+    comissaoPctValue !== null &&
+    Number.isFinite(config.quality?.comissaoPctMax) &&
+    comissaoPctValue > config.quality.comissaoPctMax
+  ) {
+    qualityFlags.push('comissao_pct_high');
+  }
+
   const normalized = {
     contract_id: contractId,
     cpf_cnpj: cpfCnpj,
@@ -106,13 +143,17 @@ export const normalizeZohoRecord = (record) => {
     data_efetivacao: dataEfetivacaoISO,
     inicio: inicioISO,
     termino: terminoISO,
+    added_time: addedTime,
+    modified_time: modifiedTime,
     status: statusNormalized,
     premio,
-    comissao_pct: comissaoPct ?? (premio && comissaoValor ? comissaoValor / premio : null),
+    comissao_pct: comissaoPctValue,
     comissao_valor: comissaoValor,
     row_hash: rowHash,
     dedup_group: rowHash,
     is_synthetic_id: isSyntheticId,
+    quality_flags: qualityFlags.length ? qualityFlags : null,
+    needs_review: qualityFlags.length > 0,
     month_ref: monthRef
   };
 

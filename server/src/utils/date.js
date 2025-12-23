@@ -48,6 +48,39 @@ export const toDateOnly = (value) => {
   return new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate()));
 };
 
+export const toDateTime = (value) => {
+  if (!value) return null;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+  const raw = String(value).trim();
+  if (!raw) return null;
+
+  const hasTimezone = /[Zz]|[+-]\d{2}:?\d{2}$/.test(raw);
+  if (hasTimezone) {
+    const parsed = new Date(raw);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  const isoMatch = raw.match(
+    /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/
+  );
+  if (isoMatch) {
+    const [, y, m, d, hh, mm, ss] = isoMatch;
+    return new Date(
+      Date.UTC(
+        Number(y),
+        Number(m) - 1,
+        Number(d),
+        Number(hh),
+        Number(mm),
+        Number(ss || 0)
+      )
+    );
+  }
+
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
 export const formatDate = (date) => {
   if (!date) return null;
   const y = date.getUTCFullYear();
