@@ -2,6 +2,7 @@ import React from 'react';
 import { DashboardSnapshot } from '../types';
 import WidgetCard from './WidgetCard';
 import { Siren, TrendingUp, AlertOctagon, Clock } from 'lucide-react';
+import { formatCurrencyBRL } from '../utils/format';
 
 interface ZoneHudProps {
   data: DashboardSnapshot | null;
@@ -141,12 +142,12 @@ const ZoneHud: React.FC<ZoneHudProps> = ({ data, renewalsD5, renewalsD15, renewa
             {item.vendedor_id} · D-{item.days_to_end} · {item.stage || 'SEM_ACAO'}
           </div>
           <div className="text-[10px] text-gray-600">
-            Impacto R$ {Number(impactValue).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
+            Impacto {formatCurrencyBRL(impactValue)}
             {probabilityLabel ? ` · Conf. ${probabilityLabel}` : ''}
           </div>
         </div>
         <div className={`${accentClass} font-bold`}>
-          R$ {Number(item.comissao_valor || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
+          {formatCurrencyBRL(item.comissao_valor || 0)}
         </div>
       </div>
     );
@@ -192,11 +193,11 @@ const ZoneHud: React.FC<ZoneHudProps> = ({ data, renewalsD5, renewalsD15, renewa
           </div>
           <div className="text-right">
             <div className="text-4xl font-bold text-white tracking-tighter">
-              R$ {kpis.comissao_mtd.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+              {formatCurrencyBRL(kpis.comissao_mtd)}
             </div>
             <div className={`text-xs font-bold mt-2 flex items-center justify-end gap-1 ${forecastColor}`}>
               <TrendingUp className="w-3 h-3" />
-              PROJEÇÃO: R$ {kpis.forecast_comissao.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
+              PROJEÇÃO: {formatCurrencyBRL(kpis.forecast_comissao)}
             </div>
             <div className="text-[10px] text-gray-500">
                (Anti-Pânico Weighted Forecast)
@@ -211,7 +212,7 @@ const ZoneHud: React.FC<ZoneHudProps> = ({ data, renewalsD5, renewalsD15, renewa
           <div className="text-xs text-gray-400 mb-1">SUA META HOJE</div>
           <div className={`text-3xl font-black ${kpis.gap_diario > 0 ? 'text-param-primary' : 'text-param-success'}`}>
              {kpis.gap_diario > 0 
-               ? `R$ ${kpis.gap_diario.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+               ? formatCurrencyBRL(kpis.gap_diario)
                : 'LIVRE'}
           </div>
           <div className="text-[10px] text-gray-500 mt-2 text-center w-full border-t border-param-border pt-2">
@@ -260,7 +261,7 @@ const ZoneHud: React.FC<ZoneHudProps> = ({ data, renewalsD5, renewalsD15, renewa
           <div>
             <div className="text-[10px] uppercase tracking-widest text-gray-500">Prêmio MTD</div>
             <div className="text-xl font-bold text-white">
-              R$ {premioMtd.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
+              {formatCurrencyBRL(premioMtd)}
             </div>
             <div className={`text-[10px] ${deltaClass(momPremio)}`}>
               MoM {formatDeltaPct(momPremio)}
@@ -282,7 +283,7 @@ const ZoneHud: React.FC<ZoneHudProps> = ({ data, renewalsD5, renewalsD15, renewa
           <div>
             <div className="text-[10px] uppercase tracking-widest text-gray-500">Ticket Médio</div>
             <div className="text-xl font-bold text-white">
-              R$ {ticketMedio.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
+              {formatCurrencyBRL(ticketMedio)}
             </div>
             <div className={`text-[10px] ${deltaClass(momTicket)}`}>
               MoM {formatDeltaPct(momTicket)}
@@ -294,7 +295,7 @@ const ZoneHud: React.FC<ZoneHudProps> = ({ data, renewalsD5, renewalsD15, renewa
           <div>
             <div className="text-[10px] uppercase tracking-widest text-gray-500">Comissão MTD</div>
             <div className="text-xl font-bold text-white">
-              R$ {kpis.comissao_mtd.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
+              {formatCurrencyBRL(kpis.comissao_mtd)}
             </div>
             <div className={`text-[10px] ${deltaClass(momComissao)}`}>
               MoM {formatDeltaPct(momComissao)}
@@ -330,7 +331,7 @@ const ZoneHud: React.FC<ZoneHudProps> = ({ data, renewalsD5, renewalsD15, renewa
                 <div className="text-right">
                     <div className="text-sm font-bold text-white">{renewals.d7.count}</div>
                     {renewals.d7.comissao_risco > 0 && (
-                        <div className="text-[10px] text-param-danger">R$ {renewals.d7.comissao_risco.toLocaleString('pt-BR', { maximumFractionDigits:0 })}</div>
+                        <div className="text-[10px] text-param-danger">{formatCurrencyBRL(renewals.d7.comissao_risco)}</div>
                     )}
                 </div>
             </div>
@@ -344,7 +345,7 @@ const ZoneHud: React.FC<ZoneHudProps> = ({ data, renewalsD5, renewalsD15, renewa
                 <div className="text-right">
                     <div className="text-sm font-bold text-white">{renewals.d15.count}</div>
                     {renewals.d15.comissao_risco > 0 && (
-                        <div className="text-[10px] text-param-warning">R$ {renewals.d15.comissao_risco.toLocaleString('pt-BR', { maximumFractionDigits:0 })}</div>
+                        <div className="text-[10px] text-param-warning">{formatCurrencyBRL(renewals.d15.comissao_risco)}</div>
                     )}
                 </div>
             </div>
@@ -358,7 +359,7 @@ const ZoneHud: React.FC<ZoneHudProps> = ({ data, renewalsD5, renewalsD15, renewa
                 <div className="text-right">
                     <div className="text-sm font-bold text-white">{renewals.d30.count}</div>
                     {renewals.d30.comissao_risco > 0 && (
-                        <div className="text-[10px] text-param-accent">R$ {renewals.d30.comissao_risco.toLocaleString('pt-BR', { maximumFractionDigits:0 })}</div>
+                        <div className="text-[10px] text-param-accent">{formatCurrencyBRL(renewals.d30.comissao_risco)}</div>
                     )}
                 </div>
             </div>

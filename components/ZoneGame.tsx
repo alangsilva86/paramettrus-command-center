@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { LeaderboardEntry, VendorStat } from '../types';
 import WidgetCard from './WidgetCard';
 import { Trophy, Shield, Flame, Crosshair } from 'lucide-react';
+import { formatCurrencyBRL } from '../utils/format';
 
 interface ZoneGameProps {
   leaderboard: LeaderboardEntry[];
@@ -154,15 +155,15 @@ const ZoneGame: React.FC<ZoneGameProps> = ({ leaderboard, vendorStats }) => {
                   </div>
                   <div className="flex items-center gap-4">
                      <span className="text-[10px] text-gray-500 font-mono">
-                       R$ {(rank.comissao || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0})} COMM
+                       {formatCurrencyBRL(rank.comissao || 0)} COMM
                      </span>
                      <span className="font-bold text-param-accent">
                        {metric === 'growth'
                          ? `${(metricValue * 100).toFixed(1)}%`
                          : metric === 'premio'
-                         ? `R$ ${Math.round(metricValue).toLocaleString('pt-BR')}`
+                         ? formatCurrencyBRL(metricValue)
                          : metric === 'comissao'
-                         ? `R$ ${Math.round(metricValue).toLocaleString('pt-BR')}`
+                         ? formatCurrencyBRL(metricValue)
                          : `${Math.floor(metricValue).toLocaleString()} XP`}
                      </span>
                   </div>
@@ -206,10 +207,10 @@ const ZoneGame: React.FC<ZoneGameProps> = ({ leaderboard, vendorStats }) => {
             <div className="border-t border-param-border pt-3">
               <div className="text-[10px] uppercase tracking-widest text-gray-500">Gap vs Mês Anterior</div>
               <div className="text-lg font-bold text-param-primary">
-                R$ {activeStats.gap_comissao.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
+                {formatCurrencyBRL(activeStats.gap_comissao)}
               </div>
               <div className="text-[10px] text-gray-500">
-                Gap diário R$ {activeStats.gap_diario.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
+                Gap diário {formatCurrencyBRL(activeStats.gap_diario)}
               </div>
             </div>
             <div className="border-t border-param-border pt-3">
@@ -219,7 +220,7 @@ const ZoneGame: React.FC<ZoneGameProps> = ({ leaderboard, vendorStats }) => {
                   <div key={item.contract_id} className="border-b border-param-border pb-1">
                     <div className="text-white font-bold">{item.segurado_nome || item.contract_id}</div>
                     <div className="text-[10px] text-gray-500">
-                      D-{item.days_to_end} · {item.stage || 'SEM_ACAO'} · Impacto R$ {Number(item.impact_score || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
+                      D-{item.days_to_end} · {item.stage || 'SEM_ACAO'} · Impacto {formatCurrencyBRL(item.impact_score || 0)}
                     </div>
                   </div>
                 ))}

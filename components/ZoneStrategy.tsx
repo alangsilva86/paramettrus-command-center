@@ -2,6 +2,7 @@ import React from 'react';
 import { DashboardSnapshot, RadarProductBubble } from '../types';
 import WidgetCard from './WidgetCard';
 import { ResponsiveContainer, ScatterChart, Scatter, XAxis, YAxis, Tooltip, Cell, ZAxis, ReferenceLine } from 'recharts';
+import { formatCurrencyBRL } from '../utils/format';
 
 interface ZoneStrategyProps {
   data: DashboardSnapshot | null;
@@ -27,8 +28,8 @@ const CustomTooltip = ({ active, payload }: any) => {
     return (
       <div className="bg-param-bg border border-param-border p-2 text-xs rounded shadow-xl z-50">
         <p className="font-bold text-white mb-1 uppercase">{data.ramo}</p>
-        <p className="text-param-primary">Comissão: R$ {data.comissao_total.toLocaleString()}</p>
-        <p className="text-gray-400">Prêmio: R$ {data.premio_total.toLocaleString()}</p>
+        <p className="text-param-primary">Comissão: {formatCurrencyBRL(data.comissao_total)}</p>
+        <p className="text-gray-400">Prêmio: {formatCurrencyBRL(data.premio_total)}</p>
         <p className="text-param-accent">Margem: {data.comissao_pct_avg.toFixed(2)}%</p>
       </div>
     );
@@ -274,10 +275,10 @@ const ZoneStrategy: React.FC<ZoneStrategyProps> = ({ data, crossSell }) => {
                   </div>
                   <div className="text-right">
                     <div className="text-param-accent font-bold">
-                      R$ {Number(item.comissao_total || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
+                      {formatCurrencyBRL(item.comissao_total || 0)}
                     </div>
                     <div className="text-gray-500 text-[10px]">
-                      Prêmio R$ {Number(item.premio_total || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
+                      Prêmio {formatCurrencyBRL(item.premio_total || 0)}
                     </div>
                   </div>
                 </div>

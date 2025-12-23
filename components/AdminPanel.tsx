@@ -10,6 +10,7 @@ import {
 } from '../services/zohoService';
 import { DashboardSnapshot, RulesVersionItem, SnapshotCompare, StatusResponse } from '../types';
 import { RefreshCw, Play, Save, ShieldCheck, Sparkles } from 'lucide-react';
+import { formatCurrencyBRL, formatSignedCurrencyBRL } from '../utils/format';
 
 interface AdminPanelProps {
   monthRef: string;
@@ -75,8 +76,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ monthRef, status, onStatusRefre
   const deltaTone = (value: number) => (value >= 0 ? 'text-param-success' : 'text-param-danger');
   const formatDeltaValue = (value: number, isPct = false) => {
     if (isPct) return `${value >= 0 ? '+' : ''}${(value * 100).toFixed(1)}%`;
-    const formatted = Math.abs(value).toLocaleString('pt-BR', { maximumFractionDigits: 0 });
-    return `${value >= 0 ? '+' : '-'} R$ ${formatted}`;
+    return formatSignedCurrencyBRL(value);
   };
 
   useEffect(() => {
@@ -509,7 +509,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ monthRef, status, onStatusRefre
                 <div className="p-3 border border-param-border rounded-xl">
                   <div className="text-[10px] text-gray-500">Gap diário</div>
                   <div className="text-lg font-bold text-param-primary">
-                    R$ {scenarioSnapshot.kpis.gap_diario.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
+                    {formatCurrencyBRL(scenarioSnapshot.kpis.gap_diario)}
                   </div>
                 </div>
                 <div className="p-3 border border-param-border rounded-xl">
@@ -609,7 +609,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ monthRef, status, onStatusRefre
                   <span className="text-[10px] text-gray-500">{rule.effective_from}</span>
                 </div>
                 <div className="text-[10px] text-gray-500 mt-1">
-                  Meta: R$ {Number(rule.meta_global_comissao || 0).toLocaleString('pt-BR')}
+                  Meta: {formatCurrencyBRL(rule.meta_global_comissao || 0)}
                 </div>
                 <div className="text-[10px] text-gray-500">
                   Dias úteis: {rule.dias_uteis}
@@ -642,7 +642,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ monthRef, status, onStatusRefre
                   Forecast: {(scenario.kpis.forecast_pct_meta * 100).toFixed(1)}%
                 </div>
                 <div className="text-[10px] text-gray-500">
-                  Gap diário: R$ {scenario.kpis.gap_diario.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
+                  Gap diário: {formatCurrencyBRL(scenario.kpis.gap_diario)}
                 </div>
               </div>
             ))}
