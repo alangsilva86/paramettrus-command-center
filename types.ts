@@ -166,6 +166,8 @@ export interface StatusResponse {
   status: string;
   last_ingestion_at: string | null;
   stale_data: boolean;
+  environment?: string;
+  api_base_url?: string;
 }
 
 export interface AdminIngestResponse {

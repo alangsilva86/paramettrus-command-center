@@ -47,7 +47,7 @@ router.get('/month', async (req, res) => {
 
   try {
     if (!force && !hasFilters) {
-      const cached = await getSnapshotCached({ monthRef, scenarioId });
+      const cached = await getSnapshotCached({ monthRef, scenarioId, rulesVersionId });
       if (cached && isSnapshotCompatible(cached)) {
         logInfo('snapshot', 'Snapshot servido do cache', { month_ref: monthRef, scenario_id: scenarioId });
         return res.json(cached);

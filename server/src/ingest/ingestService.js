@@ -1,131 +1,27 @@
 import { query, withClient } from '../db.js';
-import { sha256 } from '../utils/hash.js';
+import { config } from '../config.js';
 import { normalizeZohoRecord } from './normalize.js';
 import { fetchZohoReport, withRetry } from './zohoClient.js';
 import { addDays, formatDate, toDateOnly } from '../utils/date.js';
 import { logError, logInfo, logSuccess, logWarn } from '../utils/logger.js';
+import {
+  insertIngestionRun,
+  finalizeIngestionRun,
+  insertRawPayload,
+  getExistingRowInfo,
+  resolveTimestamp,
+  isIncomingNewer,
+  getLatestByRowHash,
+  purgeDuplicatesByRowHash,
+  insertNormalized,
+  updateNormalized
+} from './ingestRepository.js';
 
 const SOURCE = 'zoho';
 const DEFAULT_LOOKBACK_DAYS = 7;
 
 const buildCriteria = (field, start, end) => {
   return `(${field} >= "${start}" && ${field} <= "${end}")`;
-};
-
-const insertIngestionRun = async (client, startedAt) => {
-  const result = await client.query(
-    `INSERT INTO ingestion_runs (started_at, status)
-     VALUES ($1, $2)
-     RETURNING run_id`,
-    [startedAt, 'RUNNING']
-  );
-  return result.rows[0].run_id;
-};
-
-const finalizeIngestionRun = async (client, runId, payload) => {
-  const {
-    status,
-    finishedAt,
-    fetchedCount,
-    insertedNormCount,
-    duplicatesCount,
-    error,
-    details
-  } = payload;
-
-  await client.query(
-    `UPDATE ingestion_runs
-     SET finished_at = $2,
-         status = $3,
-         fetched_count = $4,
-         inserted_norm_count = $5,
-         duplicates_count = $6,
-         error = $7,
-         details = $8
-     WHERE run_id = $1`,
-    [
-      runId,
-      finishedAt,
-      status,
-      fetchedCount,
-      insertedNormCount,
-      duplicatesCount,
-      error,
-      details ? JSON.stringify(details) : null
-    ]
-  );
-};
-
-const insertRawPayload = async (client, record, fetchedAt) => {
-  const payloadHash = sha256(JSON.stringify(record));
-  const sourceContractId = record.ID || record.id || null;
-  await client.query(
-    `INSERT INTO contracts_raw (source, source_contract_id, payload, fetched_at, payload_hash)
-     VALUES ($1, $2, $3, $4, $5)`,
-    [SOURCE, sourceContractId, JSON.stringify(record), fetchedAt, payloadHash]
-  );
-  return payloadHash;
-};
-
-const getExistingRowInfo = async (client, contractId) => {
-  const result = await client.query(
-    'SELECT row_hash, vendedor_id, modified_time, added_time FROM contracts_norm WHERE contract_id = $1 LIMIT 1',
-    [contractId]
-  );
-  if (result.rowCount === 0) return null;
-  return {
-    rowHash: result.rows[0].row_hash,
-    vendedorId: result.rows[0].vendedor_id,
-    modifiedTime: result.rows[0].modified_time,
-    addedTime: result.rows[0].added_time
-  };
-};
-
-const resolveTimestamp = (record) => {
-  const value =
-    record?.modified_time ??
-    record?.modifiedTime ??
-    record?.added_time ??
-    record?.addedTime ??
-    null;
-  if (!value) return null;
-  const ts = new Date(value).getTime();
-  return Number.isNaN(ts) ? null : ts;
-};
-
-const isIncomingNewer = (incoming, existing) => {
-  const incomingTs = resolveTimestamp(incoming);
-  const existingTs = resolveTimestamp(existing);
-  if (incomingTs && existingTs) return incomingTs > existingTs;
-  if (incomingTs && !existingTs) return true;
-  if (!incomingTs && existingTs) return false;
-  return false;
-};
-
-const getLatestByRowHash = async (client, rowHash) => {
-  const result = await client.query(
-    `SELECT contract_id, modified_time, added_time
-     FROM contracts_norm
-     WHERE row_hash = $1
-     ORDER BY modified_time DESC NULLS LAST, added_time DESC NULLS LAST, created_at DESC
-     LIMIT 1`,
-    [rowHash]
-  );
-  if (result.rowCount === 0) return null;
-  return {
-    contract_id: result.rows[0].contract_id,
-    modified_time: result.rows[0].modified_time,
-    added_time: result.rows[0].added_time
-  };
-};
-
-const purgeDuplicatesByRowHash = async (client, rowHash, keepContractId) => {
-  const result = await client.query(
-    `DELETE FROM contracts_norm
-     WHERE row_hash = $1 AND contract_id <> $2`,
-    [rowHash, keepContractId]
-  );
-  return result.rowCount || 0;
 };
 
 const resolveIncrementalCriteria = async (client) => {
@@ -156,136 +52,6 @@ const resolveIncrementalCriteria = async (client) => {
   };
 };
 
-const insertNormalized = async (client, contract) => {
-  const columns = [
-    'contract_id',
-    'cpf_cnpj',
-    'segurado_nome',
-    'vendedor_id',
-    'produto',
-    'ramo',
-    'seguradora',
-    'cidade',
-    'data_efetivacao',
-    'inicio',
-    'termino',
-    'added_time',
-    'modified_time',
-    'status',
-    'premio',
-    'comissao_pct',
-    'comissao_valor',
-    'row_hash',
-    'dedup_group',
-    'is_synthetic_id',
-    'is_incomplete',
-    'is_invalid',
-    'quality_flags',
-    'needs_review',
-    'month_ref'
-  ];
-
-  const values = [
-    contract.contract_id,
-    contract.cpf_cnpj,
-    contract.segurado_nome,
-    contract.vendedor_id,
-    contract.produto,
-    contract.ramo,
-    contract.seguradora,
-    contract.cidade || null,
-    contract.data_efetivacao,
-    contract.inicio,
-    contract.termino,
-    contract.added_time,
-    contract.modified_time,
-    contract.status,
-    contract.premio,
-    contract.comissao_pct,
-    contract.comissao_valor,
-    contract.row_hash,
-    contract.dedup_group,
-    contract.is_synthetic_id,
-    contract.is_incomplete,
-    contract.is_invalid,
-    contract.quality_flags,
-    contract.needs_review,
-    contract.month_ref
-  ];
-
-  const placeholders = values.map((_, idx) => `$${idx + 1}`);
-  await client.query(
-    `INSERT INTO contracts_norm (${columns.join(', ')})
-     VALUES (${placeholders.join(', ')})
-     ON CONFLICT (contract_id) DO NOTHING`,
-    values
-  );
-};
-
-const updateNormalized = async (client, contract) => {
-  const columns = [
-    'cpf_cnpj',
-    'segurado_nome',
-    'vendedor_id',
-    'produto',
-    'ramo',
-    'seguradora',
-    'cidade',
-    'data_efetivacao',
-    'inicio',
-    'termino',
-    'added_time',
-    'modified_time',
-    'status',
-    'premio',
-    'comissao_pct',
-    'comissao_valor',
-    'row_hash',
-    'dedup_group',
-    'is_synthetic_id',
-    'is_incomplete',
-    'is_invalid',
-    'quality_flags',
-    'needs_review',
-    'month_ref'
-  ];
-
-  const values = [
-    contract.cpf_cnpj,
-    contract.segurado_nome,
-    contract.vendedor_id,
-    contract.produto,
-    contract.ramo,
-    contract.seguradora,
-    contract.cidade || null,
-    contract.data_efetivacao,
-    contract.inicio,
-    contract.termino,
-    contract.added_time,
-    contract.modified_time,
-    contract.status,
-    contract.premio,
-    contract.comissao_pct,
-    contract.comissao_valor,
-    contract.row_hash,
-    contract.dedup_group,
-    contract.is_synthetic_id,
-    contract.is_incomplete,
-    contract.is_invalid,
-    contract.quality_flags,
-    contract.needs_review,
-    contract.month_ref,
-    contract.contract_id
-  ];
-
-  const assignments = columns.map((col, idx) => `${col} = $${idx + 1}`);
-  await client.query(
-    `UPDATE contracts_norm
-     SET ${assignments.join(', ')}
-     WHERE contract_id = $${columns.length + 1}`,
-    values
-  );
-};
 
 const refreshCustomers = async (client, cpfCnpjs) => {
   if (!cpfCnpjs.length) return;
@@ -396,7 +162,7 @@ export const runIngestion = async () => {
       logInfo('ingest', 'Registros recebidos', { fetched: fetchedCount });
 
       for (const record of records) {
-        await insertRawPayload(client, record, fetchedAt);
+        await insertRawPayload({ client, record, fetchedAt, source: SOURCE });
         const normalized = normalizeZohoRecord(record);
         if (!normalized.month_ref) {
           invalidCount += 1;

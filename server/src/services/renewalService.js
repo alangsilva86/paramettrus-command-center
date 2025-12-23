@@ -104,6 +104,20 @@ const loadLatestActions = async (contractIds) => {
   return new Map(result.rows.map((row) => [row.contract_id, row]));
 };
 
+const loadActionsByType = async (contractIds, actionType) => {
+  if (!contractIds.length) return new Set();
+  const result = await query(
+    `SELECT DISTINCT contract_id
+     FROM renewal_actions
+     WHERE contract_id = ANY($1) AND action_type = $2`,
+    [contractIds, actionType]
+  );
+  return new Set(result.rows.map((row) => row.contract_id));
+};
+
+export const getRenewedContractsSet = async (contractIds) =>
+  loadActionsByType(contractIds, 'RENEWED');
+
 const computeRenewalProbability = (daysToEnd, stage) => {
   const normalized = String(stage || '').toUpperCase();
   if (normalized.includes('JUSTIFIED') || normalized.includes('CANCEL') || normalized.includes('LOST')) return 0.1;
@@ -234,15 +248,10 @@ export const getVendorPenaltyMap = async (monthRef) => {
   const metrics = await getRenewalMetrics();
   const map = new Map();
   if (metrics.black.length === 0) return map;
+  const blackContracts = metrics.black.map((contract) => contract.contract_id);
+  const justifiedSet = await loadActionsByType(blackContracts, 'JUSTIFIED');
   for (const contract of metrics.black) {
-    const justified = await query(
-      `SELECT 1
-       FROM renewal_actions
-       WHERE contract_id = $1 AND action_type = 'JUSTIFIED'
-       LIMIT 1`,
-      [contract.contract_id]
-    );
-    if (justified.rowCount === 0) {
+    if (!justifiedSet.has(contract.contract_id)) {
       map.set(contract.vendedor_id, true);
     }
   }

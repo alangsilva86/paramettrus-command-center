@@ -1,5 +1,6 @@
 import express from 'express';
 import { query } from '../db.js';
+import { config } from '../config.js';
 import { logError, logInfo } from '../utils/logger.js';
 
 const router = express.Router();
@@ -11,14 +12,22 @@ router.get('/', async (_req, res) => {
       'SELECT status, finished_at FROM ingestion_runs ORDER BY started_at DESC LIMIT 1'
     );
     if (latest.rowCount === 0) {
-      return res.json({ status: 'UNKNOWN', last_ingestion_at: null, stale_data: false });
+      return res.json({
+        status: 'UNKNOWN',
+        last_ingestion_at: null,
+        stale_data: false,
+        environment: config.env,
+        api_base_url: config.apiBaseUrl
+      });
     }
     const status = latest.rows[0].status;
     logInfo('server', 'Status enviado', { status });
     return res.json({
       status,
       last_ingestion_at: latest.rows[0].finished_at,
-      stale_data: status === 'STALE_DATA'
+      stale_data: status === 'STALE_DATA',
+      environment: config.env,
+      api_base_url: config.apiBaseUrl
     });
   } catch (error) {
     logError('server', 'Falha ao consultar status', { error: error.message });

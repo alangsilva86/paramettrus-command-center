@@ -55,6 +55,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ monthRef, status, onStatusRefre
   const [scenarioCompare, setScenarioCompare] = useState<SnapshotCompare | null>(null);
   const [scenarioHistory, setScenarioHistory] = useState<DashboardSnapshot[]>([]);
   const [scenarioHistoryLoading, setScenarioHistoryLoading] = useState(false);
+  const [activeSection, setActiveSection] = useState<'ops' | 'config' | 'scenario' | 'history'>('ops');
 
   const [formTouched, setFormTouched] = useState(false);
   const [formState, setFormState] = useState(() => ({
@@ -72,6 +73,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ monthRef, status, onStatusRefre
   const [scenarioMonth, setScenarioMonth] = useState(monthRef);
   const [scenarioId, setScenarioId] = useState(buildScenarioId());
   const [scenarioRulesId, setScenarioRulesId] = useState('');
+  const envLabel = (status?.environment || 'unknown').toUpperCase();
+  const isProdEnv = envLabel.includes('PROD');
+  const envBadgeClass = isProdEnv
+    ? 'bg-param-danger/20 border-param-danger/60 text-param-danger'
+    : envLabel.includes('STAG')
+    ? 'bg-param-warning/20 border-param-warning/60 text-param-warning'
+    : 'bg-param-success/20 border-param-success/60 text-param-success';
 
   const deltaTone = (value: number) => (value >= 0 ? 'text-param-success' : 'text-param-danger');
   const formatDeltaValue = (value: number, isPct = false) => {
@@ -92,6 +100,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ monthRef, status, onStatusRefre
   }, [monthRef]);
 
   const latestRule = useMemo(() => (rules.length > 0 ? rules[0] : null), [rules]);
+  const sections = [
+    { id: 'ops', label: 'Acesso & Ingestão', hint: 'Tokens e execução manual' },
+    { id: 'config', label: 'Regras', hint: 'Metas, pesos e bônus', count: rules.length },
+    { id: 'scenario', label: 'Cenários', hint: 'Simulação e comparação', count: scenarioHistory.length },
+    { id: 'history', label: 'Histórico', hint: 'Auditoria recente' }
+  ] as const;
+  const activeSectionMeta = sections.find((section) => section.id === activeSection);
 
   const loadRules = async () => {
     setRulesLoading(true);
@@ -232,9 +247,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ monthRef, status, onStatusRefre
     }
   };
 
-  return (
+  const renderOpsSection = () => (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-      <WidgetCard title="Admin Ops" className="lg:col-span-1">
+      <WidgetCard title="Acesso Admin" className="lg:col-span-1" alert={isProdEnv}>
         <div className="flex flex-col gap-3 text-xs text-gray-300">
           <div>
             <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-1">Token Admin</div>
@@ -256,47 +271,66 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ monthRef, status, onStatusRefre
             />
           </div>
           <div className="border-t border-param-border pt-3">
-            <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-2">Ingestão</div>
-            <div className="flex items-center justify-between text-[10px] text-gray-500 mb-2">
-              <span>Status</span>
-              <span className="flex items-center gap-1 text-gray-300">
-                <ShieldCheck className="w-3 h-3 text-param-success" />
-                {status?.status || 'UNKNOWN'}
-              </span>
+            <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-2">Ambiente</div>
+            <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-[10px] border ${envBadgeClass}`}>
+              <span>ENV:</span>
+              <span className="font-bold">{envLabel}</span>
             </div>
-            <div className="text-[10px] text-gray-600 mb-3">
-              Última execução: {status?.last_ingestion_at || '—'}
+            <div className="text-[10px] text-gray-600 mt-2">
+              API: {status?.api_base_url || 'não informado'}
             </div>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={handleRunIngestion}
-                disabled={ingestLoading}
-                className="flex-1 text-[10px] font-bold uppercase tracking-widest px-4 py-2 h-10 rounded-[10px] border border-param-primary bg-param-primary text-white hover:brightness-110 disabled:opacity-50"
-              >
-                {ingestLoading ? 'Rodando...' : 'Rodar ingestão'}
-              </button>
-              <button
-                type="button"
-                onClick={onReloadDashboard}
-                className="text-[10px] font-bold uppercase tracking-widest px-4 py-2 h-10 rounded-[10px] border border-param-border text-white/80 hover:border-param-primary"
-              >
-                <RefreshCw className="w-4 h-4" />
-              </button>
+            <div className="text-[10px] text-gray-600 mt-1">
+              Tokens são salvos localmente neste navegador.
             </div>
           </div>
-          {(rulesMessage || rulesError) && (
-            <div
-              className={`text-[10px] mt-2 p-3 rounded-[10px] border ${
-                rulesError ? 'border-param-danger text-param-danger' : 'border-param-success text-param-success'
-              }`}
-            >
-              {rulesError || rulesMessage}
-            </div>
-          )}
         </div>
       </WidgetCard>
 
+      <WidgetCard title="Ingestão & Status" className="lg:col-span-2">
+        <div className="flex flex-col gap-3 text-xs text-gray-300">
+          <div className="flex items-center justify-between text-[10px] text-gray-500">
+            <span>Status</span>
+            <span className="flex items-center gap-1 text-gray-300">
+              <ShieldCheck className="w-3 h-3 text-param-success" />
+              {status?.status || 'UNKNOWN'}
+            </span>
+          </div>
+          <div className="text-[10px] text-gray-600">
+            Última execução: {status?.last_ingestion_at || '—'}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={handleRunIngestion}
+              disabled={ingestLoading}
+              className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest px-4 py-2 h-10 rounded-[10px] border border-param-primary bg-param-primary text-white hover:brightness-110 disabled:opacity-50"
+            >
+              {ingestLoading ? 'Rodando...' : 'Rodar ingestão'}
+            </button>
+            <button
+              type="button"
+              onClick={onStatusRefresh}
+              className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest px-4 py-2 h-10 rounded-[10px] border border-param-border text-white/80 hover:border-param-primary"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Atualizar status
+            </button>
+            <button
+              type="button"
+              onClick={onReloadDashboard}
+              className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest px-4 py-2 h-10 rounded-[10px] border border-param-border text-white/80 hover:border-param-primary"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Atualizar painel
+            </button>
+          </div>
+        </div>
+      </WidgetCard>
+    </div>
+  );
+
+  const renderConfigSection = () => (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
       <WidgetCard title="Rules Version (Configuração)" className="lg:col-span-2">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 text-xs text-gray-300">
           <div className="flex flex-col gap-3">
@@ -442,6 +476,38 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ monthRef, status, onStatusRefre
         </div>
       </WidgetCard>
 
+      <WidgetCard title="Histórico de Rules Versions" className="lg:col-span-1">
+        <div className="flex flex-col gap-3 text-xs text-gray-300">
+          {rulesLoading && <div className="text-gray-600 italic">Carregando rules...</div>}
+          {!rulesLoading && rules.length === 0 && (
+            <div className="text-gray-600 italic">Nenhuma rules version encontrada.</div>
+          )}
+          {!rulesLoading &&
+            rules.slice(0, 6).map((rule) => (
+              <div key={rule.rules_version_id} className="border border-param-border rounded-xl p-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-white">{rule.rules_version_id}</span>
+                  <span className="text-[10px] text-gray-500">{rule.effective_from}</span>
+                </div>
+                <div className="text-[10px] text-gray-500 mt-1">
+                  Meta: {formatCurrencyBRL(rule.meta_global_comissao || 0)}
+                </div>
+                <div className="text-[10px] text-gray-500">
+                  Dias úteis: {rule.dias_uteis}
+                </div>
+                <div className="flex items-center gap-2 text-[10px] text-gray-500 mt-2">
+                  <Sparkles className="w-3 h-3 text-param-primary" />
+                  {rule.audit_note || 'Sem audit note'}
+                </div>
+              </div>
+            ))}
+        </div>
+      </WidgetCard>
+    </div>
+  );
+
+  const renderScenarioSection = () => (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
       <WidgetCard title="Cenário (Simulação)" className="lg:col-span-2">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 text-xs text-gray-300">
           <div className="flex flex-col gap-3">
@@ -595,35 +661,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ monthRef, status, onStatusRefre
         </div>
       </WidgetCard>
 
-      <WidgetCard title="Histórico de Rules Versions" className="lg:col-span-1">
-        <div className="flex flex-col gap-3 text-xs text-gray-300">
-          {rulesLoading && <div className="text-gray-600 italic">Carregando rules...</div>}
-          {!rulesLoading && rules.length === 0 && (
-            <div className="text-gray-600 italic">Nenhuma rules version encontrada.</div>
-          )}
-          {!rulesLoading &&
-            rules.slice(0, 6).map((rule) => (
-              <div key={rule.rules_version_id} className="border border-param-border rounded-xl p-3">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-white">{rule.rules_version_id}</span>
-                  <span className="text-[10px] text-gray-500">{rule.effective_from}</span>
-                </div>
-                <div className="text-[10px] text-gray-500 mt-1">
-                  Meta: {formatCurrencyBRL(rule.meta_global_comissao || 0)}
-                </div>
-                <div className="text-[10px] text-gray-500">
-                  Dias úteis: {rule.dias_uteis}
-                </div>
-                <div className="flex items-center gap-2 text-[10px] text-gray-500 mt-2">
-                  <Sparkles className="w-3 h-3 text-param-primary" />
-                  {rule.audit_note || 'Sem audit note'}
-                </div>
-              </div>
-            ))}
-        </div>
-      </WidgetCard>
-
-      <WidgetCard title="Histórico de Cenários" className="lg:col-span-2">
+      <WidgetCard title="Histórico de Cenários" className="lg:col-span-1">
         <div className="flex flex-col gap-3 text-xs text-gray-300">
           {scenarioHistoryLoading && <div className="text-gray-600 italic">Carregando cenários...</div>}
           {!scenarioHistoryLoading && scenarioHistory.length === 0 && (
@@ -648,6 +686,123 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ monthRef, status, onStatusRefre
             ))}
         </div>
       </WidgetCard>
+    </div>
+  );
+
+  const renderHistorySection = () => (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <WidgetCard title="Histórico de Rules Versions">
+        <div className="flex flex-col gap-3 text-xs text-gray-300">
+          {rulesLoading && <div className="text-gray-600 italic">Carregando rules...</div>}
+          {!rulesLoading && rules.length === 0 && (
+            <div className="text-gray-600 italic">Nenhuma rules version encontrada.</div>
+          )}
+          {!rulesLoading &&
+            rules.slice(0, 10).map((rule) => (
+              <div key={rule.rules_version_id} className="border border-param-border rounded-xl p-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-white">{rule.rules_version_id}</span>
+                  <span className="text-[10px] text-gray-500">{rule.effective_from}</span>
+                </div>
+                <div className="text-[10px] text-gray-500 mt-1">
+                  Meta: {formatCurrencyBRL(rule.meta_global_comissao || 0)}
+                </div>
+                <div className="text-[10px] text-gray-500">
+                  Dias úteis: {rule.dias_uteis}
+                </div>
+              </div>
+            ))}
+        </div>
+      </WidgetCard>
+
+      <WidgetCard title="Histórico de Cenários">
+        <div className="flex flex-col gap-3 text-xs text-gray-300">
+          {scenarioHistoryLoading && <div className="text-gray-600 italic">Carregando cenários...</div>}
+          {!scenarioHistoryLoading && scenarioHistory.length === 0 && (
+            <div className="text-gray-600 italic">Nenhum cenário encontrado.</div>
+          )}
+          {!scenarioHistoryLoading &&
+            scenarioHistory.slice(0, 10).map((scenario) => (
+              <div key={scenario.scenario_id || scenario.month} className="border border-param-border rounded-xl p-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-white">{scenario.scenario_id || 'SCN'}</span>
+                  <span className="text-[10px] text-gray-500">
+                    {scenario.created_at ? new Date(scenario.created_at).toLocaleString('pt-BR') : '—'}
+                  </span>
+                </div>
+                <div className="text-[10px] text-gray-500 mt-1">
+                  Forecast: {(scenario.kpis.forecast_pct_meta * 100).toFixed(1)}%
+                </div>
+                <div className="text-[10px] text-gray-500">
+                  Gap diário: {formatCurrencyBRL(scenario.kpis.gap_diario)}
+                </div>
+              </div>
+            ))}
+        </div>
+      </WidgetCard>
+    </div>
+  );
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div
+        className={`rounded-xl border px-4 py-3 ${
+          isProdEnv ? 'border-param-danger/60 bg-param-danger/10' : 'border-param-border bg-param-card'
+        }`}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="text-[10px] uppercase tracking-widest text-gray-500">Admin Console</div>
+            <div className="text-lg font-bold text-white">Controle, configuração e simulações</div>
+            <div className="text-[10px] text-gray-500 mt-1">
+              Ações aqui impactam diretamente o ambiente ativo.
+            </div>
+          </div>
+          <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-[10px] border ${envBadgeClass}`}>
+            <span>ENV:</span>
+            <span className="font-bold">{envLabel}</span>
+          </div>
+        </div>
+      </div>
+
+      {(rulesMessage || rulesError) && (
+        <div
+          className={`text-[10px] p-3 rounded-[10px] border ${
+            rulesError ? 'border-param-danger text-param-danger' : 'border-param-success text-param-success'
+          }`}
+        >
+          {rulesError || rulesMessage}
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2 bg-param-card border border-param-border rounded-xl p-2">
+        {sections.map((section) => (
+          <button
+            key={section.id}
+            type="button"
+            onClick={() => setActiveSection(section.id)}
+            className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest rounded-[10px] transition-colors ${
+              activeSection === section.id ? 'bg-param-primary text-white' : 'text-white/60 hover:text-white'
+            }`}
+          >
+            {section.label}
+            {'count' in section && section.count !== undefined && (
+              <span className="ml-2 text-[10px] px-2 py-0.5 rounded-full border border-param-border text-white/70">
+                {section.count}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      <div className="text-[10px] uppercase tracking-widest text-white/50">
+        {activeSectionMeta?.hint || 'Selecione uma seção'}
+      </div>
+
+      {activeSection === 'ops' && renderOpsSection()}
+      {activeSection === 'config' && renderConfigSection()}
+      {activeSection === 'scenario' && renderScenarioSection()}
+      {activeSection === 'history' && renderHistorySection()}
     </div>
   );
 };

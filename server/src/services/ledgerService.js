@@ -1,10 +1,10 @@
 import { query } from '../db.js';
 import { sha256 } from '../utils/hash.js';
-import { toDateOnly } from '../utils/date.js';
+import { formatDate, toDateOnly } from '../utils/date.js';
 import { toReais } from '../utils/money.js';
 import { buildStatusFilter } from '../utils/status.js';
 import { getRulesVersionById, getRulesVersionForDate } from './rulesService.js';
-import { getVendorPenaltyMap } from './renewalService.js';
+import { getRenewedContractsSet, getVendorPenaltyMap } from './renewalService.js';
 import { config } from '../config.js';
 import { logInfo, logSuccess, logWarn } from '../utils/logger.js';
 
@@ -129,6 +129,9 @@ export const computeLedgerForMonth = async ({ monthRef, scenarioId = null, force
 
   const monthContracts = await fetchContractsForMonth(monthRef);
   const penaltyMap = await getVendorPenaltyMap(monthRef);
+  const renewedContracts = await getRenewedContractsSet(
+    monthContracts.map((contract) => contract.contract_id)
+  );
 
   const overrideRules = rulesVersionId ? await getRulesVersionById(rulesVersionId) : null;
 
@@ -155,9 +158,19 @@ export const computeLedgerForMonth = async ({ monthRef, scenarioId = null, force
   let comboAwarded = 0;
   let salvageAwarded = 0;
 
+  const rulesCache = new Map();
+  const resolveRules = async (date) => {
+    if (overrideRules) return overrideRules;
+    const key = date ? formatDate(date) : 'default';
+    if (rulesCache.has(key)) return rulesCache.get(key);
+    const rules = await getRulesVersionForDate(date);
+    rulesCache.set(key, rules);
+    return rules;
+  };
+
   for (const contract of monthContracts) {
     const dataEfetivacao = toDateOnly(contract.data_efetivacao);
-    const rules = overrideRules || (await getRulesVersionForDate(dataEfetivacao));
+    const rules = await resolveRules(dataEfetivacao);
     const weights = rules.product_weights || {};
     const bonusEvents = rules.bonus_events || {};
     const weight = weights[contract.ramo] ?? 1;
@@ -181,14 +194,7 @@ export const computeLedgerForMonth = async ({ monthRef, scenarioId = null, force
         comboAwarded += 1;
       }
 
-      const salvageActions = await query(
-        `SELECT 1
-         FROM renewal_actions
-         WHERE contract_id = $1 AND action_type = 'RENEWED'
-         LIMIT 1`,
-        [contract.contract_id]
-      );
-      if (salvageActions.rowCount > 0 && bonusEvents.salvamento_d5) {
+      if (renewedContracts.has(contract.contract_id) && bonusEvents.salvamento_d5) {
         xpBonus += Number(bonusEvents.salvamento_d5);
         reasons.push('SALVAMENTO_D5');
         salvageAwarded += 1;

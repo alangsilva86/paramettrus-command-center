@@ -10,6 +10,9 @@
     "seed:curve": "node scripts/seed_curve.js",
     "validate:monthly": "node scripts/validate_monthly_metrics.js",
     "ingest:backfill": "node scripts/ingest_backfill.js",
+    "inspect:money": "node scripts/inspect_money_units.js",
+    "migrate:money": "node scripts/migrate_money_units.js",
+    "test": "node --test tests/*.test.js",
     "test:money": "node --test tests/money.test.js"
   },
   "dependencies": {

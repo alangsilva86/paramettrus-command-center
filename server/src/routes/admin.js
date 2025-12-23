@@ -18,6 +18,8 @@ const requireAdmin = (req, res, next) => {
   return next();
 };
 
+const isValidMonth = (value) => /^\d{4}-\d{2}$/.test(value);
+
 router.post('/rules_versions', requireAdmin, async (req, res) => {
   try {
     logInfo('admin', 'Criacao de rules version solicitada', { actor: req.header('x-user-id') || 'system' });
@@ -74,6 +76,37 @@ router.post('/ingest', requireAdmin, async (req, res) => {
   } catch (error) {
     logError('admin', 'Falha na ingestao manual', { error: error.message });
     res.status(502).json({ status: 'STALE_DATA', error: error.message });
+  }
+});
+
+router.post('/snapshots/purge', requireAdmin, async (req, res) => {
+  const monthRef = req.body?.month_ref;
+  const scenarioId = Object.prototype.hasOwnProperty.call(req.body || {}, 'scenario_id')
+    ? req.body.scenario_id
+    : undefined;
+  if (!monthRef || !isValidMonth(monthRef)) {
+    return res.status(400).json({ error: 'month_ref inválido (YYYY-MM)' });
+  }
+  try {
+    const conditions = ['month_ref = $1'];
+    const params = [monthRef];
+    if (scenarioId !== undefined) {
+      params.push(scenarioId || null);
+      conditions.push(`scenario_id IS NOT DISTINCT FROM $${params.length}`);
+    }
+    const result = await query(
+      `DELETE FROM snapshots_month WHERE ${conditions.join(' AND ')}`,
+      params
+    );
+    logInfo('admin', 'Snapshots purge executado', {
+      month_ref: monthRef,
+      scenario_id: scenarioId ?? 'all',
+      deleted: result.rowCount
+    });
+    return res.json({ deleted: result.rowCount });
+  } catch (error) {
+    logError('admin', 'Falha ao remover snapshots', { error: error.message });
+    return res.status(500).json({ error: error.message });
   }
 });
 

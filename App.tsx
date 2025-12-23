@@ -16,6 +16,7 @@ const App: React.FC = () => {
   const [crossSell, setCrossSell] = useState<CrossSellSummary | null>(null);
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [activeTab, setActiveTab] = useState<'ops' | 'admin'>('ops');
 
   const inputClass =
     'bg-param-bg border border-param-border text-xs text-white px-3 py-2 h-10 rounded-[10px] focus:outline-none focus:border-param-primary focus:ring-2 focus:ring-param-primary/30 w-full';
@@ -30,7 +31,7 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
-    const loadData = async () => {
+    const loadOpsData = async () => {
       setLoading(true);
       try {
         const [snapshot, d5List, d15List, d30List, crossSellSummary, statusResponse] = await Promise.all([
@@ -54,8 +55,22 @@ const App: React.FC = () => {
       }
     };
 
-    loadData();
-  }, [monthRef, vendorFilter, ramoFilter, reloadKey]);
+    const loadStatusOnly = async () => {
+      setLoading(false);
+      try {
+        const statusResponse = await fetchStatus();
+        setStatus(statusResponse);
+      } catch (e) {
+        console.error("Failed to load status", e);
+      }
+    };
+
+    if (activeTab === 'ops') {
+      loadOpsData();
+    } else {
+      loadStatusOnly();
+    }
+  }, [monthRef, vendorFilter, ramoFilter, reloadKey, activeTab]);
 
   const refreshStatus = async () => {
     const statusResponse = await fetchStatus();
@@ -67,6 +82,12 @@ const App: React.FC = () => {
   };
 
   const filterOptions = data?.filters || { vendors: [], ramos: [] };
+  const envLabel = (status?.environment || 'unknown').toUpperCase();
+  const envBadgeClass = envLabel.includes('PROD')
+    ? 'bg-param-danger/20 border-param-danger/60 text-param-danger'
+    : envLabel.includes('STAG')
+    ? 'bg-param-warning/20 border-param-warning/60 text-param-warning'
+    : 'bg-param-success/20 border-param-success/60 text-param-success';
 
   return (
     <div className="min-h-screen bg-param-bg text-param-text font-sans p-4 md:p-6 lg:p-8 overflow-hidden flex flex-col">
@@ -86,6 +107,10 @@ const App: React.FC = () => {
           </div>
         </div>
           <div className="flex items-center gap-4 text-xs">
+            <div className={`flex items-center gap-2 px-3 py-1 rounded-[10px] border ${envBadgeClass}`}>
+              <span className="text-white/80">ENV:</span>
+              <span className="font-bold">{envLabel}</span>
+            </div>
             <div className={`flex items-center gap-2 px-3 py-1 rounded-[10px] border ${status?.stale_data ? 'bg-param-danger/20 border-param-danger/60' : 'bg-white/10 border-white/10'}`}>
               <ShieldCheck className={`w-3 h-3 ${status?.stale_data ? 'text-param-danger' : 'text-param-success'}`} />
               <span className="text-white/80">
@@ -98,111 +123,142 @@ const App: React.FC = () => {
           </div>
       </header>
 
-      {/* Filtros globais */}
-      <section className="mb-6">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          <div className="bg-param-card border border-param-border p-4 rounded-xl">
-            <div className="text-[10px] uppercase tracking-widest text-white/60 mb-2">Mês</div>
-            <input
-              type="month"
-              className={inputClass}
-              value={monthRef}
-              onChange={(event) => setMonthRef(event.target.value)}
-            />
-          </div>
-          <div className="bg-param-card border border-param-border p-4 rounded-xl">
-            <div className="text-[10px] uppercase tracking-widest text-white/60 mb-2">Equipe / Vendedor</div>
-            <select
-              className={inputClass}
-              value={vendorFilter}
-              onChange={(event) => setVendorFilter(event.target.value)}
-            >
-              <option value="">Todos</option>
-              {filterOptions.vendors.map((vendor) => (
-                <option key={vendor} value={vendor}>
-                  {vendor}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="bg-param-card border border-param-border p-4 rounded-xl">
-            <div className="text-[10px] uppercase tracking-widest text-white/60 mb-2">Produto</div>
-            <select
-              className={inputClass}
-              value={ramoFilter}
-              onChange={(event) => setRamoFilter(event.target.value)}
-            >
-              <option value="">Todos</option>
-              {filterOptions.ramos.map((ramo) => (
-                <option key={ramo} value={ramo}>
-                  {ramo}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="bg-param-card border border-param-border p-4 rounded-xl flex flex-col justify-between">
-            <div>
-            <div className="text-[10px] uppercase tracking-widest text-white/60 mb-2">Escopo ativo</div>
-            <div className="text-xs text-white/80">
-              {vendorFilter || ramoFilter ? 'Filtrado' : 'Global'}
-            </div>
-            <div className="text-[10px] text-white/60 mt-1">
-              {vendorFilter && <span>Vendedor: {vendorFilter}</span>}
-              {!vendorFilter && ramoFilter && <span>Produto: {ramoFilter}</span>}
-            </div>
-            </div>
-            {(vendorFilter || ramoFilter) && (
-              <button
-                type="button"
-                onClick={() => {
-                  setVendorFilter('');
-                  setRamoFilter('');
-                }}
-                className="mt-2 text-[10px] font-bold uppercase tracking-widest px-3 py-2 h-10 rounded-[10px] border border-param-border text-gray-200 hover:border-param-primary"
-              >
-                Limpar filtros
-              </button>
-            )}
-          </div>
+      <nav className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div className="inline-flex items-center bg-param-card border border-param-border rounded-xl p-1">
+          <button
+            type="button"
+            onClick={() => setActiveTab('ops')}
+            className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest rounded-[10px] transition-colors ${
+              activeTab === 'ops' ? 'bg-param-primary text-white' : 'text-white/60 hover:text-white'
+            }`}
+          >
+            Operações
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('admin')}
+            className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest rounded-[10px] transition-colors ${
+              activeTab === 'admin' ? 'bg-param-danger text-white' : 'text-white/60 hover:text-white'
+            }`}
+          >
+            Admin & Config
+          </button>
         </div>
-      </section>
+        <div className="text-[10px] uppercase tracking-widest text-white/60">
+          {activeTab === 'ops' ? 'Foco: operação e performance' : 'Foco: controle e governança'}
+        </div>
+      </nav>
 
-      {loading ? (
-        <div className="flex-1 flex items-center justify-center flex-col gap-4">
-          <div className="relative w-16 h-16">
-            <div className="absolute inset-0 rounded-full border-2 border-white/10"></div>
-            <div className="absolute inset-2 rounded-full border-2 border-param-primary border-t-transparent animate-spin"></div>
-          </div>
-          <div className="text-param-primary font-mono text-sm animate-pulse tracking-widest">CALCULATING XP LEDGER...</div>
-        </div>
-      ) : (
+      {activeTab === 'ops' && (
+        <>
+          {/* Filtros globais */}
+          <section className="mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <div className="bg-param-card border border-param-border p-4 rounded-xl">
+                <div className="text-[10px] uppercase tracking-widest text-white/60 mb-2">Mês</div>
+                <input
+                  type="month"
+                  className={inputClass}
+                  value={monthRef}
+                  onChange={(event) => setMonthRef(event.target.value)}
+                />
+              </div>
+              <div className="bg-param-card border border-param-border p-4 rounded-xl">
+                <div className="text-[10px] uppercase tracking-widest text-white/60 mb-2">Equipe / Vendedor</div>
+                <select
+                  className={inputClass}
+                  value={vendorFilter}
+                  onChange={(event) => setVendorFilter(event.target.value)}
+                >
+                  <option value="">Todos</option>
+                  {filterOptions.vendors.map((vendor) => (
+                    <option key={vendor} value={vendor}>
+                      {vendor}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="bg-param-card border border-param-border p-4 rounded-xl">
+                <div className="text-[10px] uppercase tracking-widest text-white/60 mb-2">Produto</div>
+                <select
+                  className={inputClass}
+                  value={ramoFilter}
+                  onChange={(event) => setRamoFilter(event.target.value)}
+                >
+                  <option value="">Todos</option>
+                  {filterOptions.ramos.map((ramo) => (
+                    <option key={ramo} value={ramo}>
+                      {ramo}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="bg-param-card border border-param-border p-4 rounded-xl flex flex-col justify-between">
+                <div>
+                <div className="text-[10px] uppercase tracking-widest text-white/60 mb-2">Escopo ativo</div>
+                <div className="text-xs text-white/80">
+                  {vendorFilter || ramoFilter ? 'Filtrado' : 'Global'}
+                </div>
+                <div className="text-[10px] text-white/60 mt-1">
+                  {vendorFilter && <span>Vendedor: {vendorFilter}</span>}
+                  {!vendorFilter && ramoFilter && <span>Produto: {ramoFilter}</span>}
+                </div>
+                </div>
+                {(vendorFilter || ramoFilter) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setVendorFilter('');
+                      setRamoFilter('');
+                    }}
+                    className="mt-2 text-[10px] font-bold uppercase tracking-widest px-3 py-2 h-10 rounded-[10px] border border-param-border text-gray-200 hover:border-param-primary"
+                  >
+                    Limpar filtros
+                  </button>
+                )}
+              </div>
+            </div>
+          </section>
+
+          {loading ? (
+            <div className="flex-1 flex items-center justify-center flex-col gap-4">
+              <div className="relative w-16 h-16">
+                <div className="absolute inset-0 rounded-full border-2 border-white/10"></div>
+                <div className="absolute inset-2 rounded-full border-2 border-param-primary border-t-transparent animate-spin"></div>
+              </div>
+              <div className="text-param-primary font-mono text-sm animate-pulse tracking-widest">CALCULATING XP LEDGER...</div>
+            </div>
+          ) : (
+            <main className="flex-1 flex flex-col gap-6 max-w-7xl mx-auto w-full">
+              
+              {/* ZONA 1: HUD Tático (25% visual weight) */}
+              <section className="flex-shrink-0 min-h-[180px]">
+                <ZoneHud data={data} renewalsD5={renewalsD5} renewalsD15={renewalsD15} renewalsD30={renewalsD30} />
+              </section>
+
+              {/* ZONA 2: Arena Gamificada (40% visual weight) */}
+              <section className="flex-grow min-h-[300px]">
+                <ZoneGame leaderboard={data?.leaderboard || []} vendorStats={data?.vendor_stats || []} />
+              </section>
+
+              {/* ZONA 3: Inteligência Estratégica (35% visual weight) */}
+              <section className="flex-shrink-0 min-h-[250px]">
+                <ZoneStrategy data={data} crossSell={crossSell} />
+              </section>
+
+            </main>
+          )}
+        </>
+      )}
+
+      {activeTab === 'admin' && (
         <main className="flex-1 flex flex-col gap-6 max-w-7xl mx-auto w-full">
-          
-          {/* ZONA 1: HUD Tático (25% visual weight) */}
-          <section className="flex-shrink-0 min-h-[180px]">
-            <ZoneHud data={data} renewalsD5={renewalsD5} renewalsD15={renewalsD15} renewalsD30={renewalsD30} />
-          </section>
-
-          {/* ZONA 2: Arena Gamificada (40% visual weight) */}
-          <section className="flex-grow min-h-[300px]">
-            <ZoneGame leaderboard={data?.leaderboard || []} vendorStats={data?.vendor_stats || []} />
-          </section>
-
-          {/* ZONA 3: Inteligência Estratégica (35% visual weight) */}
-          <section className="flex-shrink-0 min-h-[250px]">
-            <ZoneStrategy data={data} crossSell={crossSell} />
-          </section>
-
-          {/* ZONA 4: Admin Ops */}
-          <section className="flex-shrink-0 min-h-[280px]">
-            <AdminPanel
-              monthRef={monthRef}
-              status={status}
-              onStatusRefresh={refreshStatus}
-              onReloadDashboard={reloadDashboard}
-            />
-          </section>
-
+          <AdminPanel
+            monthRef={monthRef}
+            status={status}
+            onStatusRefresh={refreshStatus}
+            onReloadDashboard={reloadDashboard}
+          />
         </main>
       )}
       

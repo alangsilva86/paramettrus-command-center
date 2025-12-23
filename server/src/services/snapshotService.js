@@ -604,6 +604,7 @@ export const buildMonthlySnapshot = async ({
   filters = {},
   persist = true
 }) => {
+  const startedAt = Date.now();
   logInfo('snapshot', 'Montando snapshot mensal', {
     month_ref: monthRef,
     scenario_id: scenarioId,
@@ -787,20 +788,27 @@ export const buildMonthlySnapshot = async ({
     month_ref: monthRef,
     leaderboard: leaderboard.length,
     radar_products: radar.bubbleProducts.length,
-    stale_data: staleData
+    stale_data: staleData,
+    duration_ms: Date.now() - startedAt
   });
 
   return snapshot;
 };
 
-export const getSnapshotCached = async ({ monthRef, scenarioId = null }) => {
+export const getSnapshotCached = async ({ monthRef, scenarioId = null, rulesVersionId = null }) => {
+  const params = [monthRef, scenarioId || null];
+  const conditions = ['month_ref = $1', 'scenario_id IS NOT DISTINCT FROM $2'];
+  if (rulesVersionId) {
+    params.push(rulesVersionId);
+    conditions.push(`rules_version_id = $${params.length}`);
+  }
   const result = await query(
     `SELECT data
      FROM snapshots_month
-     WHERE month_ref = $1 AND scenario_id IS NOT DISTINCT FROM $2
+     WHERE ${conditions.join(' AND ')}
      ORDER BY created_at DESC
      LIMIT 1`,
-    [monthRef, scenarioId || null]
+    params
   );
   if (result.rowCount === 0) return null;
   return result.rows[0].data;
