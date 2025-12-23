@@ -1,6 +1,7 @@
 import { query } from '../db.js';
 import { config } from '../config.js';
 import { addDays, daysDiff, toDateOnly } from '../utils/date.js';
+import { buildStatusFilter } from '../utils/status.js';
 import { logInfo, logWarn } from '../utils/logger.js';
 
 const buildRenewalIndex = (contracts) => {
@@ -48,6 +49,10 @@ const findSuccessor = (contract, grouped) => {
 const fetchContracts = async ({ vendorId = null, ramo = null } = {}) => {
   const conditions = ['is_invalid = FALSE'];
   const params = [];
+  const statusFilter = buildStatusFilter(params, config.contractStatus);
+  if (statusFilter) {
+    conditions.push(statusFilter);
+  }
   if (vendorId) {
     params.push(vendorId);
     conditions.push(`vendedor_id = $${params.length}`);
@@ -57,7 +62,16 @@ const fetchContracts = async ({ vendorId = null, ramo = null } = {}) => {
     conditions.push(`ramo = $${params.length}`);
   }
   const result = await query(
-    `SELECT contract_id, cpf_cnpj, segurado_nome, vendedor_id, ramo, premio, comissao_valor, inicio, termino, status
+    `SELECT contract_id,
+            cpf_cnpj,
+            segurado_nome,
+            vendedor_id,
+            ramo,
+            premio / 100.0 AS premio,
+            comissao_valor / 100.0 AS comissao_valor,
+            inicio,
+            termino,
+            status
      FROM contracts_norm
      WHERE ${conditions.join(' AND ')}`,
     params

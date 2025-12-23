@@ -29,7 +29,7 @@ export const getZohoAccessToken = async () => {
   }
 };
 
-const requestZohoPage = async ({ accessToken, baseUrl, offset, limit }) => {
+const requestZohoPage = async ({ accessToken, baseUrl, offset, limit, criteria }) => {
   try {
     return await axios.get(baseUrl, {
       headers: {
@@ -38,7 +38,8 @@ const requestZohoPage = async ({ accessToken, baseUrl, offset, limit }) => {
       },
       params: {
         from: offset,
-        limit
+        limit,
+        ...(criteria ? { criteria } : {})
       },
       timeout: config.zoho.requestTimeoutMs
     });
@@ -57,7 +58,7 @@ const requestZohoPage = async ({ accessToken, baseUrl, offset, limit }) => {
   }
 };
 
-export const fetchZohoReport = async ({ limit, maxPages = Infinity } = {}) => {
+export const fetchZohoReport = async ({ limit, maxPages = Infinity, criteria = null } = {}) => {
   let tokenResult = await getZohoAccessToken();
   let accessToken = tokenResult.accessToken;
   let baseDomain = tokenResult.apiDomain || config.zoho.apiDomain;
@@ -87,7 +88,8 @@ export const fetchZohoReport = async ({ limit, maxPages = Infinity } = {}) => {
   logInfo('zoho', 'Buscando dados no Zoho Creator', {
     endpoint: baseUrl,
     limit: pageLimit,
-    api_domain: baseDomain
+    api_domain: baseDomain,
+    criteria: criteria || null
   });
   const records = [];
   let offset = 0;
@@ -98,7 +100,7 @@ export const fetchZohoReport = async ({ limit, maxPages = Infinity } = {}) => {
   while (keepGoing) {
     let response;
     try {
-      response = await requestZohoPage({ accessToken, baseUrl, offset, limit: pageLimit });
+      response = await requestZohoPage({ accessToken, baseUrl, offset, limit: pageLimit, criteria });
     } catch (error) {
       if (error?.code === 'ZOHO_AUTH_401') {
         if (!refreshed) {
@@ -109,7 +111,7 @@ export const fetchZohoReport = async ({ limit, maxPages = Infinity } = {}) => {
           baseDomain = tokenResult.apiDomain || config.zoho.apiDomain;
           base = `${baseDomain}/creator/v2.1/data`;
           baseUrl = `${base}/${path}`;
-          response = await requestZohoPage({ accessToken, baseUrl, offset, limit: pageLimit });
+          response = await requestZohoPage({ accessToken, baseUrl, offset, limit: pageLimit, criteria });
         } else {
           logError('zoho', '401 persistente apos refresh', { offset });
           const authError = new Error('Zoho report unauthorized after refresh');

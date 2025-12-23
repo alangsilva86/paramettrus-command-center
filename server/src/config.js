@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import { normalizeStatusList } from './utils/status.js';
 
 dotenv.config();
 
@@ -54,6 +55,16 @@ export const config = {
     premio: process.env.ZOHO_FIELD_PREMIO || 'contract_award',
     comissaoValor: process.env.ZOHO_FIELD_COMISSAO_VALOR || 'contract_commission_amount',
     comissaoPct: process.env.ZOHO_FIELD_COMISSAO_PCT || 'contract_commission_percent',
-    status: process.env.ZOHO_FIELD_STATUS || 'contract_status'
-  }
+    status: process.env.ZOHO_FIELD_STATUS || 'contract_status',
+    modifiedTime: process.env.ZOHO_FIELD_MODIFIED_TIME || 'Modified_Time'
+  },
+  contractStatus: (() => {
+    const include = normalizeStatusList(process.env.CONTRACT_STATUS_INCLUDE || '');
+    const exclude = include.length
+      ? []
+      : normalizeStatusList(
+          process.env.CONTRACT_STATUS_EXCLUDE || 'cancelado,canceled,cancelled'
+        );
+    return { include, exclude };
+  })()
 };

@@ -1,6 +1,8 @@
 import { query } from '../db.js';
 import { sha256 } from '../utils/hash.js';
 import { toDateOnly } from '../utils/date.js';
+import { toReais } from '../utils/money.js';
+import { buildStatusFilter } from '../utils/status.js';
 import { getRulesVersionById, getRulesVersionForDate } from './rulesService.js';
 import { getVendorPenaltyMap } from './renewalService.js';
 import { config } from '../config.js';
@@ -62,24 +64,35 @@ const getLatestLedgerEntry = async (contractId, monthRef, scenarioId) => {
 };
 
 const fetchContractsForCrossSell = async () => {
+  const params = [];
+  const conditions = ['is_incomplete = FALSE', 'is_invalid = FALSE'];
+  const statusFilter = buildStatusFilter(params, config.contractStatus);
+  if (statusFilter) {
+    conditions.push(statusFilter);
+  }
   const result = await query(
     `SELECT contract_id, cpf_cnpj, ramo, data_efetivacao
      FROM contracts_norm
-     WHERE is_incomplete = FALSE AND is_invalid = FALSE
-     ORDER BY data_efetivacao ASC, contract_id ASC`
+     WHERE ${conditions.join(' AND ')}
+     ORDER BY data_efetivacao ASC, contract_id ASC`,
+    params
   );
   return result.rows;
 };
 
 const fetchContractsForMonth = async (monthRef) => {
+  const params = [monthRef];
+  const conditions = ['month_ref = $1', 'is_incomplete = FALSE', 'is_invalid = FALSE'];
+  const statusFilter = buildStatusFilter(params, config.contractStatus);
+  if (statusFilter) {
+    conditions.push(statusFilter);
+  }
   const result = await query(
     `SELECT *
      FROM contracts_norm
-     WHERE month_ref = $1
-       AND is_incomplete = FALSE
-       AND is_invalid = FALSE
+     WHERE ${conditions.join(' AND ')}
      ORDER BY data_efetivacao ASC, contract_id ASC`,
-    [monthRef]
+    params
   );
   return result.rows;
 };
@@ -146,7 +159,8 @@ export const computeLedgerForMonth = async ({ monthRef, scenarioId = null, force
     const bonusEvents = rules.bonus_events || {};
     const weight = weights[contract.ramo] ?? 1;
 
-    const xpBase = Number(((Number(contract.comissao_valor) / 10) * weight).toFixed(2));
+    const comissao = toReais(contract.comissao_valor);
+    const xpBase = Number(((comissao / 10) * weight).toFixed(2));
     let xpBonus = 0;
     const reasons = [];
 

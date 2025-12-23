@@ -1,15 +1,23 @@
 import { query } from '../db.js';
+import { config } from '../config.js';
+import { buildStatusFilter } from '../utils/status.js';
 import { logInfo, logWarn } from '../utils/logger.js';
 
 export const getCrossSellSummary = async ({ vendorId = null } = {}) => {
   logInfo('cross', 'Calculando resumo de cross-sell');
   let customers;
   if (vendorId) {
+    const cpfParams = [vendorId];
+    const cpfConditions = ['vendedor_id = $1', 'cpf_cnpj IS NOT NULL'];
+    const statusFilter = buildStatusFilter(cpfParams, config.contractStatus);
+    if (statusFilter) {
+      cpfConditions.push(statusFilter);
+    }
     const cpfRows = await query(
       `SELECT DISTINCT cpf_cnpj
        FROM contracts_norm
-       WHERE vendedor_id = $1 AND cpf_cnpj IS NOT NULL`,
-      [vendorId]
+       WHERE ${cpfConditions.join(' AND ')}`,
+      cpfParams
     );
     const cpfList = cpfRows.rows.map((row) => row.cpf_cnpj).filter(Boolean);
     if (cpfList.length === 0) {
@@ -44,17 +52,22 @@ export const getCrossSellSummary = async ({ vendorId = null } = {}) => {
   let autoSemVida = [];
 
   if (cpfList.length > 0) {
+    const autoParams = [cpfList];
+    const autoConditions = [`ramo = 'AUTO'`, 'cpf_cnpj = ANY($1)'];
+    const statusFilter = buildStatusFilter(autoParams, config.contractStatus);
+    if (statusFilter) {
+      autoConditions.push(statusFilter);
+    }
     const result = await query(
       `SELECT cpf_cnpj,
               MAX(segurado_nome) AS segurado_nome,
-              SUM(comissao_valor) AS comissao_total,
-              SUM(premio) AS premio_total
+              SUM(comissao_valor) / 100.0 AS comissao_total,
+              SUM(premio) / 100.0 AS premio_total
        FROM contracts_norm
-       WHERE ramo = 'AUTO'
-         AND cpf_cnpj = ANY($1)
+       WHERE ${autoConditions.join(' AND ')}
        GROUP BY cpf_cnpj
-       ORDER BY SUM(comissao_valor) DESC, SUM(premio) DESC`,
-      [cpfList]
+       ORDER BY comissao_total DESC, premio_total DESC`,
+      autoParams
     );
     autoSemVida = result.rows;
   }

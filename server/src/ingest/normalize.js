@@ -69,12 +69,12 @@ export const normalizeZohoRecord = (record) => {
 
   const { produto, ramo } = normalizeRamo(produtoRaw);
 
-  const dataEfetivacaoISO = formatDate(dataEfetivacao);
+  const effectiveDate = dataEfetivacao || inicio;
+  const dataEfetivacaoISO = formatDate(effectiveDate);
   const inicioISO = formatDate(inicio);
   const terminoISO = formatDate(termino);
 
-  const referenceDate = dataEfetivacao || inicio || termino;
-  const monthRef = referenceDate ? formatMonthRef(referenceDate) : null;
+  const monthRef = effectiveDate ? formatMonthRef(effectiveDate) : null;
 
   const rowHashSource = [
     cpfCnpj || '',

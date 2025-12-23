@@ -9,6 +9,8 @@ import {
   startOfMonth,
   toDateOnly
 } from '../utils/date.js';
+import { toReais } from '../utils/money.js';
+import { buildStatusFilter } from '../utils/status.js';
 import { computeLedgerForMonth } from './ledgerService.js';
 import { getRulesVersionById, getRulesVersionForDate } from './rulesService.js';
 import { getRenewalMetrics } from './renewalService.js';
@@ -31,6 +33,10 @@ const buildContractsFilters = ({
   const params = [monthRef];
   if (!includeIncomplete) {
     conditions.push('is_incomplete = FALSE');
+  }
+  const statusFilter = buildStatusFilter(params, config.contractStatus);
+  if (statusFilter) {
+    conditions.push(statusFilter);
   }
   if (vendorId) {
     params.push(vendorId);
@@ -84,19 +90,26 @@ const getLatestIngestionStatus = async () => {
 };
 
 const getFilterOptions = async (monthRef) => {
+  const baseParams = [monthRef];
+  const baseConditions = ['month_ref = $1', 'is_invalid = FALSE'];
+  const statusFilter = buildStatusFilter(baseParams, config.contractStatus);
+  if (statusFilter) {
+    baseConditions.push(statusFilter);
+  }
   const vendors = await query(
     `SELECT DISTINCT vendedor_id
      FROM contracts_norm
-     WHERE month_ref = $1 AND is_invalid = FALSE AND vendedor_id IS NOT NULL AND vendedor_id <> ''
+     WHERE ${baseConditions.join(' AND ')} AND vendedor_id IS NOT NULL AND vendedor_id <> ''
      ORDER BY vendedor_id`,
-    [monthRef]
+    baseParams
   );
+  const ramoParams = [...baseParams];
   const ramos = await query(
     `SELECT DISTINCT ramo
      FROM contracts_norm
-     WHERE month_ref = $1 AND is_invalid = FALSE AND ramo IS NOT NULL
+     WHERE ${baseConditions.join(' AND ')} AND ramo IS NOT NULL
      ORDER BY ramo`,
-    [monthRef]
+    ramoParams
   );
   return {
     vendors: vendors.rows.map((row) => row.vendedor_id).filter(Boolean),
@@ -161,9 +174,9 @@ const getMonthlyAggregates = async ({ monthRef, filters = {}, cutoffDate = null 
     cutoffDate
   });
   const result = await query(
-    `SELECT COUNT(*)::int AS count,
-            COALESCE(SUM(comissao_valor), 0) AS comissao_total,
-            COALESCE(SUM(premio), 0) AS premio_total
+    `SELECT COUNT(DISTINCT contract_id)::int AS count,
+            COALESCE(SUM(comissao_valor), 0) / 100.0 AS comissao_total,
+            COALESCE(SUM(premio), 0) / 100.0 AS premio_total
      FROM contracts_norm
      WHERE ${conditions.join(' AND ')}`,
     params
@@ -195,8 +208,8 @@ const getDailyTrend = async ({ monthRef, filters = {}, referenceDate, days = 14 
 
   const result = await query(
     `SELECT data_efetivacao::date AS day,
-            COALESCE(SUM(comissao_valor), 0) AS comissao_total,
-            COALESCE(SUM(premio), 0) AS premio_total
+            COALESCE(SUM(comissao_valor), 0) / 100.0 AS comissao_total,
+            COALESCE(SUM(premio), 0) / 100.0 AS premio_total
      FROM contracts_norm
      WHERE ${conditions.join(' AND ')}
      GROUP BY day
@@ -243,7 +256,7 @@ const getLeaderboard = async (monthRef, scenarioId, filters = {}) => {
     ramo: filters.ramo
   });
   const contracts = await query(
-    `SELECT contract_id, comissao_valor
+    `SELECT contract_id, comissao_valor / 100.0 AS comissao_valor
      FROM contracts_norm
      WHERE ${conditions.join(' AND ')}`,
     params
@@ -300,12 +313,12 @@ const getRadarData = (contractsRows, blackByRamo) => {
       ramoStats.set(ramo, { comm: 0, prem: 0, count: 0, black: 0 });
     }
     const stat = ramoStats.get(ramo);
-    stat.comm += Number(row.comissao_valor || 0);
-    stat.prem += Number(row.premio || 0);
+    stat.comm += toReais(row.comissao_valor);
+    stat.prem += toReais(row.premio);
     stat.count += 1;
 
     const insurer = row.seguradora || 'N/D';
-    insurerStats.set(insurer, (insurerStats.get(insurer) || 0) + Number(row.comissao_valor || 0));
+    insurerStats.set(insurer, (insurerStats.get(insurer) || 0) + toReais(row.comissao_valor));
   });
 
   const insurerValues = Array.from(insurerStats.values());
@@ -365,9 +378,9 @@ const getMixAggregate = async ({ monthRef, filters = {}, field }) => {
   });
   const result = await query(
     `SELECT ${field} AS key,
-            COALESCE(SUM(comissao_valor), 0) AS comissao_total,
-            COALESCE(SUM(premio), 0) AS premio_total,
-            COUNT(*)::int AS contracts_count
+            COALESCE(SUM(comissao_valor), 0) / 100.0 AS comissao_total,
+            COALESCE(SUM(premio), 0) / 100.0 AS premio_total,
+            COUNT(DISTINCT contract_id)::int AS contracts_count
      FROM contracts_norm
      WHERE ${conditions.join(' AND ')}
      GROUP BY ${field}`,
@@ -518,9 +531,9 @@ const getVendorAggregates = async ({ monthRef, filters = {} }) => {
   });
   const result = await query(
     `SELECT vendedor_id,
-            COALESCE(SUM(comissao_valor), 0) AS comissao_total,
-            COALESCE(SUM(premio), 0) AS premio_total,
-            COUNT(*)::int AS sales_count
+            COALESCE(SUM(comissao_valor), 0) / 100.0 AS comissao_total,
+            COALESCE(SUM(premio), 0) / 100.0 AS premio_total,
+            COUNT(DISTINCT contract_id)::int AS sales_count
      FROM contracts_norm
      WHERE ${conditions.join(' AND ')}
      GROUP BY vendedor_id`,
@@ -657,7 +670,7 @@ export const buildMonthlySnapshot = async ({
 
   const autoComm = contracts
     .filter((c) => c.ramo === 'AUTO')
-    .reduce((sum, c) => sum + Number(c.comissao_valor || 0), 0);
+    .reduce((sum, c) => sum + toReais(c.comissao_valor), 0);
   const autoShare = comissaoMtd > 0 ? autoComm / comissaoMtd : 0;
   const monoprodutoPct = await getCustomersMonoprodutoPct(filters.vendorId || null);
 
