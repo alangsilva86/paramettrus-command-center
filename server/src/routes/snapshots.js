@@ -3,6 +3,7 @@ import {
   buildMonthlySnapshot,
   compareSnapshots,
   getSnapshotCached,
+  getLatestSnapshotRulesVersionId,
   listScenarioSnapshots,
   SNAPSHOT_MONEY_UNIT,
   SNAPSHOT_VERSION
@@ -36,22 +37,26 @@ router.get('/month', async (req, res) => {
   };
   const hasFilters = Boolean(filters.vendorId || filters.ramo);
 
-  logInfo('snapshot', 'Requisicao de snapshot', {
-    month_ref: monthRef,
-    scenario_id: scenarioId,
-    force,
-    rules_version_id: rulesVersionId || 'auto',
-    filters
-  });
-
   if (!isValidMonth(monthRef)) {
     logWarn('snapshot', 'Parametro yyyy_mm invalido', { month_ref: monthRef });
     return res.status(400).json({ error: 'yyyy_mm inválido' });
   }
 
   try {
+    const resolvedRulesVersionId =
+      !rulesVersionId && hasFilters && !scenarioId
+        ? await getLatestSnapshotRulesVersionId(monthRef)
+        : rulesVersionId;
+
+    logInfo('snapshot', 'Requisicao de snapshot', {
+      month_ref: monthRef,
+      scenario_id: scenarioId,
+      force,
+      rules_version_id: resolvedRulesVersionId || 'auto',
+      filters
+    });
     if (!force && !hasFilters) {
-      const cached = await getSnapshotCached({ monthRef, scenarioId, rulesVersionId });
+      const cached = await getSnapshotCached({ monthRef, scenarioId, rulesVersionId: resolvedRulesVersionId });
       if (cached && isSnapshotCompatible(cached)) {
         logInfo('snapshot', 'Snapshot servido do cache', { month_ref: monthRef, scenario_id: scenarioId });
         return res.json(cached);
@@ -61,7 +66,7 @@ router.get('/month', async (req, res) => {
       monthRef,
       scenarioId,
       force,
-      rulesVersionId,
+      rulesVersionId: resolvedRulesVersionId,
       filters,
       persist: !hasFilters
     });

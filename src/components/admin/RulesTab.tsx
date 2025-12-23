@@ -1,8 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronUp, RotateCcw } from 'lucide-react';
 import WidgetCard from '../../../components/WidgetCard';
 import { RulesVersionItem } from '../../../types';
-import { formatCurrencyBRL } from '../../../utils/format';
+import { formatCurrencyBRL, parseLocalizedNumber } from '../../../utils/format';
 import { RulesDraft, RulesValidation } from './types';
 
 interface RulesTabProps {
@@ -20,22 +20,86 @@ interface RulesTabProps {
 const inputClass =
   'bg-param-bg border border-param-border text-xs text-white px-3 py-2 h-10 rounded-[10px] focus:outline-none focus:border-param-primary focus:ring-2 focus:ring-param-primary/30 w-full';
 
+const sanitizeIntegerInput = (value: string) => value.replace(/\D/g, '');
+
+const sanitizeDecimalInput = (value: string, allowNegative = false) => {
+  let cleaned = value.replace(',', '.').replace(/[^\d.-]/g, '');
+  if (allowNegative) {
+    cleaned = cleaned.replace(/(?!^)-/g, '');
+  } else {
+    cleaned = cleaned.replace(/-/g, '');
+  }
+  const parts = cleaned.split('.');
+  if (parts.length > 2) {
+    cleaned = `${parts.shift()}.${parts.join('')}`;
+  }
+  return cleaned;
+};
+
+const parseDecimalValue = (value: string) => {
+  const cleaned = sanitizeDecimalInput(value, true);
+  if (!cleaned || cleaned === '-' || cleaned === '.') return null;
+  const parsed = Number(cleaned);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const normalizeDecimalOnBlur = (value: string, min = 0, maxDecimals = 2) => {
+  if (!value || value.trim() === '') return '';
+  const parsed = parseDecimalValue(value);
+  if (parsed === null) return '';
+  const clamped = Math.max(min, parsed);
+  const factor = Math.pow(10, maxDecimals);
+  const rounded = Math.round(clamped * factor) / factor;
+  return String(rounded);
+};
+
 const CurrencyInput: React.FC<{
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
 }> = ({ value, onChange, placeholder }) => {
-  const displayValue = value ? formatCurrencyBRL(Number(value)) : '';
+  const [isEditing, setIsEditing] = useState(false);
+  const [rawValue, setRawValue] = useState('');
+
+  useEffect(() => {
+    if (!isEditing) {
+      setRawValue(value || '');
+    }
+  }, [value, isEditing]);
+
+  const displayValue = isEditing ? rawValue : value ? formatCurrencyBRL(value) : '';
+
   return (
     <input
       type="text"
-      inputMode="numeric"
+      inputMode="decimal"
       className={inputClass}
       value={displayValue}
       placeholder={placeholder}
+      onFocus={() => {
+        setIsEditing(true);
+        setRawValue(value || '');
+      }}
+      onBlur={() => {
+        setIsEditing(false);
+        if (!rawValue || rawValue.trim() === '' || !/\d/.test(rawValue)) {
+          onChange('');
+          return;
+        }
+        const parsed = parseLocalizedNumber(rawValue);
+        onChange(String(parsed));
+      }}
       onChange={(event) => {
-        const digits = event.target.value.replace(/\D/g, '');
-        onChange(digits);
+        const nextValue = event.target.value;
+        setRawValue(nextValue);
+        if (!nextValue || nextValue.trim() === '' || !/\d/.test(nextValue)) {
+          onChange('');
+          return;
+        }
+        const parsed = parseLocalizedNumber(nextValue);
+        if (Number.isFinite(parsed)) {
+          onChange(String(parsed));
+        }
       }}
     />
   );
@@ -64,7 +128,11 @@ const Stepper: React.FC<{
         min={min}
         className={inputClass}
         value={value}
-        onChange={(event) => onChange(event.target.value)}
+        onChange={(event) => onChange(sanitizeDecimalInput(event.target.value))}
+        onBlur={(event) => {
+          const nextValue = normalizeDecimalOnBlur(event.target.value, min, 2);
+          if (nextValue !== value) onChange(nextValue);
+        }}
       />
       <button
         type="button"
@@ -128,6 +196,7 @@ const RulesTab: React.FC<RulesTabProps> = ({
   onResetDraft
 }) => {
   const [openSection, setOpenSection] = useState<'global' | 'weights' | 'bonus' | null>('global');
+  const [bonusMemory, setBonusMemory] = useState<Record<string, string>>({});
 
   const orderedProducts = useMemo(() => {
     const unique = new Set([...(products || []), ...Object.keys(draft.product_weights || {})]);
@@ -154,6 +223,19 @@ const RulesTab: React.FC<RulesTabProps> = ({
       defaultValue: 600
     }
   ];
+
+  useEffect(() => {
+    setBonusMemory((prev) => {
+      const next = { ...prev };
+      Object.entries(draft.bonus_events || {}).forEach(([key, value]) => {
+        const numeric = parseDecimalValue(String(value ?? ''));
+        if (numeric !== null && numeric > 0) {
+          next[key] = String(value);
+        }
+      });
+      return next;
+    });
+  }, [draft.bonus_events]);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -217,11 +299,14 @@ const RulesTab: React.FC<RulesTabProps> = ({
               <div>
                 <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-1">Dias úteis</div>
                 <input
-                  type="number"
-                  min={1}
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   className={inputClass}
                   value={draft.dias_uteis}
-                  onChange={(event) => onDraftFieldChange('dias_uteis', event.target.value)}
+                  onChange={(event) =>
+                    onDraftFieldChange('dias_uteis', sanitizeIntegerInput(event.target.value))
+                  }
                 />
                 <div className="text-[10px] text-gray-500 mt-1">
                   Usado para calcular o ritmo diário necessário.
@@ -304,7 +389,9 @@ const RulesTab: React.FC<RulesTabProps> = ({
                         onToggle={() =>
                           onBonusChange(
                             bonus.key,
-                            isEnabled ? '0' : String(Number(value || 0) || bonus.defaultValue)
+                            isEnabled
+                              ? '0'
+                              : String(bonusMemory[bonus.key] ?? String(bonus.defaultValue))
                           )
                         }
                       />
@@ -314,9 +401,16 @@ const RulesTab: React.FC<RulesTabProps> = ({
                       <input
                         type="number"
                         min={0}
-                        className={inputClass}
+                        className={`${inputClass} ${!isEnabled ? 'opacity-60' : ''}`}
                         value={value}
-                        onChange={(event) => onBonusChange(bonus.key, event.target.value)}
+                        disabled={!isEnabled}
+                        onChange={(event) =>
+                          onBonusChange(bonus.key, sanitizeDecimalInput(event.target.value))
+                        }
+                        onBlur={(event) => {
+                          const nextValue = normalizeDecimalOnBlur(event.target.value, 0, 2);
+                          if (nextValue !== value) onBonusChange(bonus.key, nextValue);
+                        }}
                       />
                     </div>
                   </div>

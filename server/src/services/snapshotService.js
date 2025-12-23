@@ -829,6 +829,19 @@ export const getSnapshotCached = async ({ monthRef, scenarioId = null, rulesVers
   return result.rows[0].data;
 };
 
+export const getLatestSnapshotRulesVersionId = async (monthRef) => {
+  const result = await query(
+    `SELECT rules_version_id
+     FROM snapshots_month
+     WHERE month_ref = $1 AND scenario_id IS NULL
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [monthRef]
+  );
+  if (result.rowCount === 0) return null;
+  return result.rows[0].rules_version_id;
+};
+
 export const listScenarioSnapshots = async ({ monthRef }) => {
   const result = await query(
     `SELECT scenario_id, rules_version_id, created_at, data

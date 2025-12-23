@@ -5,8 +5,18 @@ const currencyFormatter = new Intl.NumberFormat('pt-BR', {
   maximumFractionDigits: 2
 });
 
-const parseLocalizedNumber = (value: string) => {
-  const normalized = value
+export const parseLocalizedNumber = (value: string) => {
+  const trimmed = value.trim();
+  const hasComma = trimmed.includes(',');
+  const hasDot = trimmed.includes('.');
+  if (hasDot && !hasComma) {
+    const decimalMatch = trimmed.match(/^-?\d+\.\d{1,2}$/);
+    if (decimalMatch) {
+      const parsed = Number(trimmed);
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+  }
+  const normalized = trimmed
     .replace(/\./g, '')
     .replace(',', '.')
     .replace(/[^\d.-]/g, '');
@@ -17,7 +27,17 @@ const parseLocalizedNumber = (value: string) => {
 const toNumber = (value: number | string | null | undefined) => {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value === 'string' && value.trim() !== '') {
-    return parseLocalizedNumber(value);
+    const trimmed = value.trim();
+    const hasComma = trimmed.includes(',');
+    const hasDot = trimmed.includes('.');
+    if (hasDot && !hasComma) {
+      const decimalMatch = trimmed.match(/^-?\d+\.\d{1,2}$/);
+      if (decimalMatch) {
+        const parsed = Number(trimmed);
+        if (Number.isFinite(parsed)) return parsed;
+      }
+    }
+    return parseLocalizedNumber(trimmed);
   }
   return 0;
 };
