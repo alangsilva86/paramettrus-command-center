@@ -26,6 +26,28 @@ const isSnapshotCompatible = (snapshot) =>
   snapshot.kpis.premio_mtd !== undefined &&
   Array.isArray(snapshot.trend_daily);
 
+const ensureAdminAccess = (req, res) => {
+  if (!config.adminToken) return true;
+  const token = req.header('x-admin-token');
+  if (token !== config.adminToken) {
+    logWarn('snapshot', 'Acesso negado para reprocessamento', { ip: req.ip });
+    res.status(401).json({ error: 'Token expirado ou inválido.' });
+    return false;
+  }
+  return true;
+};
+
+const resolveMonthLock = async (monthRef) => {
+  const lockedByConfig = config.ingest.lockedMonths.includes(monthRef);
+  const lockRow = await query('SELECT is_closed FROM month_locks WHERE month_ref = $1 LIMIT 1', [monthRef]);
+  const lockedByDb = lockRow.rowCount > 0 ? Boolean(lockRow.rows[0].is_closed) : false;
+  const isClosed = lockedByConfig || lockedByDb;
+  return {
+    isClosed,
+    message: isClosed ? 'Mês fechado para alterações.' : 'Mês aberto para simulações e fechamento.'
+  };
+};
+
 router.get('/month', async (req, res) => {
   const monthRef = req.query.yyyy_mm;
   const scenarioId = req.query.scenario_id || null;
@@ -43,6 +65,16 @@ router.get('/month', async (req, res) => {
   }
 
   try {
+    const needsAdmin = force || Boolean(rulesVersionId) || Boolean(scenarioId);
+    if (needsAdmin && !ensureAdminAccess(req, res)) {
+      return;
+    }
+    if (needsAdmin) {
+      const lockStatus = await resolveMonthLock(monthRef);
+      if (lockStatus.isClosed) {
+        return res.status(409).json({ error: lockStatus.message });
+      }
+    }
     const resolvedRulesVersionId =
       !rulesVersionId && hasFilters && !scenarioId
         ? await getLatestSnapshotRulesVersionId(monthRef)

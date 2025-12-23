@@ -33,6 +33,19 @@ const getLatestIngestionStatus = async () => {
   };
 };
 
+const resolveMonthLock = async (monthRef) => {
+  const lockedByConfig = config.ingest.lockedMonths.includes(monthRef);
+  const result = await query('SELECT is_closed FROM month_locks WHERE month_ref = $1 LIMIT 1', [monthRef]);
+  const lockedByDb = result.rowCount > 0 ? Boolean(result.rows[0].is_closed) : false;
+  const isClosed = lockedByConfig || lockedByDb;
+  const source = lockedByConfig ? 'config' : lockedByDb ? 'db' : null;
+  return {
+    isClosed,
+    source,
+    message: isClosed ? 'Mês fechado para alterações.' : 'Mês aberto para simulações e fechamento.'
+  };
+};
+
 const buildDraftRules = ({ payload, scenarioId }) => ({
   rules_version_id: `draft_${scenarioId}`,
   effective_from: isValidDate(payload?.effective_from)
@@ -116,16 +129,12 @@ router.get('/month-status', requireAdmin, async (req, res) => {
     return res.status(400).json({ error: 'month_ref inválido (YYYY-MM)' });
   }
   try {
-    const lockedByConfig = config.ingest.lockedMonths.includes(monthRef);
-    const result = await query('SELECT is_closed FROM month_locks WHERE month_ref = $1 LIMIT 1', [monthRef]);
-    const lockedByDb = result.rowCount > 0 ? Boolean(result.rows[0].is_closed) : false;
-    const isClosed = lockedByConfig || lockedByDb;
-    const source = lockedByConfig ? 'config' : lockedByDb ? 'db' : null;
+    const { isClosed, source, message } = await resolveMonthLock(monthRef);
     return res.json({
       month_ref: monthRef,
       is_closed: isClosed,
       source,
-      message: isClosed ? 'Mês fechado para alterações.' : 'Mês aberto para simulações e fechamento.'
+      message
     });
   } catch (error) {
     logError('admin', 'Falha ao consultar month lock', { error: error.message });
@@ -142,6 +151,10 @@ router.post('/scenarios', requireAdmin, async (req, res) => {
     return res.status(400).json({ error: 'rules_payload obrigatório' });
   }
   try {
+    const lockStatus = await resolveMonthLock(monthRef);
+    if (lockStatus.isClosed) {
+      return res.status(409).json({ error: lockStatus.message });
+    }
     const scenarioId = req.body?.scenario_id || `draft_${Date.now()}`;
     const draftRules = buildDraftRules({ payload: req.body.rules_payload, scenarioId });
     const snapshot = await buildMonthlySnapshot({

@@ -38,7 +38,7 @@ interface AdminPanelProps {
 }
 
 const buildScenarioId = () => {
-  const stamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 12);
+  const stamp = new Date().toISOString().replace(/\D/g, '').slice(0, 14);
   return `scn_${stamp}`;
 };
 
@@ -276,19 +276,20 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
     loadHealth();
   }, [adminToken, actor]);
 
+  const loadDataCoverage = async () => {
+    setDataCoverageLoading(true);
+    try {
+      const snapshot = await fetchDashboardSnapshot(monthRef);
+      setDataCoverage(snapshot.data_coverage);
+      setProductOptions(snapshot.filters?.ramos || []);
+    } catch (error: any) {
+      pushToast('error', error.message || 'Falha ao carregar qualidade dos dados');
+    } finally {
+      setDataCoverageLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const loadDataCoverage = async () => {
-      setDataCoverageLoading(true);
-      try {
-        const snapshot = await fetchDashboardSnapshot(monthRef);
-        setDataCoverage(snapshot.data_coverage);
-        setProductOptions(snapshot.filters?.ramos || []);
-      } catch (error: any) {
-        pushToast('error', error.message || 'Falha ao carregar qualidade dos dados');
-      } finally {
-        setDataCoverageLoading(false);
-      }
-    };
     loadDataCoverage();
   }, [monthRef]);
 
@@ -439,7 +440,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
     try {
       const payload = buildPayload(draft);
       const result = await createRulesVersion(payload, adminToken, actor);
-      await reprocessSnapshot(scenarioMonth, result.rules_version_id);
+      await reprocessSnapshot(scenarioMonth, result.rules_version_id, adminToken, actor);
       pushToast('success', 'Regras oficializadas e mês reprocessado.');
       setDraftTouched(false);
       setLastSimulatedHash(null);
@@ -453,6 +454,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
       setConfirmOpen(false);
       setPublishLoading(false);
     }
+  };
+
+  const handleReloadDashboard = () => {
+    void loadDataCoverage();
+    onReloadDashboard();
   };
 
   const tabs: AdminTabItem[] = [
@@ -515,7 +521,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
           }}
           onRefreshStatus={onStatusRefresh}
           onRunIngestion={handleRunIngestion}
-          onReloadDashboard={onReloadDashboard}
+          onReloadDashboard={handleReloadDashboard}
           onShowQualityIssues={() => pushToast('info', 'Filtro detalhado em construção.')}
         />
       )}

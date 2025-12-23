@@ -199,38 +199,40 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
         </div>
       </WidgetCard>
 
-      <WidgetCard title="Qualidade dos Dados" className="lg:col-span-1">
-        <div className="flex flex-col items-center text-center gap-3 text-xs text-gray-300">
-          <div className="relative w-20 h-20">
-            <div
-              className="absolute inset-0 rounded-full"
-              style={{
-                background: `conic-gradient(#FF6B06 ${validPct * 100}%, rgba(255,255,255,0.08) 0)`
-              }}
-            />
-            <div className="absolute inset-2 rounded-full bg-param-card flex items-center justify-center">
-              <span className="text-sm font-bold text-white">{dataCoverageLoading ? '—' : validPercentLabel}</span>
+      <div id="admin-quality-card">
+        <WidgetCard title="Qualidade dos Dados">
+          <div className="flex flex-col items-center text-center gap-3 text-xs text-gray-300">
+            <div className="relative w-20 h-20">
+              <div
+                className="absolute inset-0 rounded-full"
+                style={{
+                  background: `conic-gradient(#FF6B06 ${validPct * 100}%, rgba(255,255,255,0.08) 0)`
+                }}
+              />
+              <div className="absolute inset-2 rounded-full bg-param-card flex items-center justify-center">
+                <span className="text-sm font-bold text-white">{dataCoverageLoading ? '—' : validPercentLabel}</span>
+              </div>
             </div>
-          </div>
-          <div>
-            <div className="text-[11px] uppercase tracking-widest text-gray-500">Contratos válidos</div>
-            <div className="text-sm font-bold text-white">
-              {dataCoverageLoading ? 'Carregando...' : `${totalContracts - invalidContracts} / ${totalContracts}`}
+            <div>
+              <div className="text-[11px] uppercase tracking-widest text-gray-500">Contratos válidos</div>
+              <div className="text-sm font-bold text-white">
+                {dataCoverageLoading ? 'Carregando...' : `${totalContracts - invalidContracts} / ${totalContracts}`}
+              </div>
             </div>
+            <div className="text-[10px] text-gray-500">
+              Falhas: {incompleteContracts} incompletos | {invalidContracts} inválidos
+            </div>
+            <button
+              type="button"
+              onClick={onShowQualityIssues}
+              className="text-[10px] uppercase tracking-widest text-param-primary hover:text-white disabled:text-white/30"
+              disabled={issuesCount === 0}
+            >
+              {issuesCount > 0 ? `Ver ${issuesCount} contratos com erro` : 'Sem erros críticos'}
+            </button>
           </div>
-          <div className="text-[10px] text-gray-500">
-            Falhas: {incompleteContracts} incompletos | {invalidContracts} inválidos
-          </div>
-          <button
-            type="button"
-            onClick={onShowQualityIssues}
-            className="text-[10px] uppercase tracking-widest text-param-primary hover:text-white disabled:text-white/30"
-            disabled={issuesCount === 0}
-          >
-            {issuesCount > 0 ? `Ver ${issuesCount} contratos com erro` : 'Sem erros críticos'}
-          </button>
-        </div>
-      </WidgetCard>
+        </WidgetCard>
+      </div>
     </div>
   );
 };

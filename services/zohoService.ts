@@ -53,11 +53,15 @@ export const fetchDashboardSnapshot = async (
 export const fetchScenarioSnapshot = async (
   monthRef: string,
   scenarioId: string,
-  rulesVersionId?: string
+  rulesVersionId?: string,
+  adminToken?: string,
+  actor?: string
 ): Promise<DashboardSnapshot> => {
   const params = new URLSearchParams({ yyyy_mm: monthRef, scenario_id: scenarioId, force_reprocess: 'true' });
   if (rulesVersionId) params.set('rules_version_id', rulesVersionId);
-  const response = await fetch(`${API_BASE}/api/snapshots/month?${params.toString()}`);
+  const response = await fetch(`${API_BASE}/api/snapshots/month?${params.toString()}`, {
+    headers: buildAdminHeaders(adminToken, actor)
+  });
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response, 'Falha ao simular cenário'));
   }
@@ -229,11 +233,15 @@ export const simulateScenarioDraft = async (
 
 export const reprocessSnapshot = async (
   monthRef: string,
-  rulesVersionId?: string
+  rulesVersionId?: string,
+  adminToken?: string,
+  actor?: string
 ): Promise<DashboardSnapshot> => {
   const params = new URLSearchParams({ yyyy_mm: monthRef, force_reprocess: 'true' });
   if (rulesVersionId) params.set('rules_version_id', rulesVersionId);
-  const response = await fetch(`${API_BASE}/api/snapshots/month?${params.toString()}`);
+  const response = await fetch(`${API_BASE}/api/snapshots/month?${params.toString()}`, {
+    headers: buildAdminHeaders(adminToken, actor)
+  });
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response, 'Falha ao reprocessar mês'));
   }

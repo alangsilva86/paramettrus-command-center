@@ -37,9 +37,9 @@ const qualityLabelMap: Record<QualityStatus, string> = {
 };
 
 const exceptionActionHints: Record<string, string> = {
-  unknown_seller: 'Abra o Admin para atribuir vendedor e evitar distorções no ranking.',
-  missing_product: 'Atualize o ramo dos contratos no Admin para garantir mix confiável.',
-  missing_value: 'Informe prêmio/comissão no Admin para liberar previsões seguras.'
+  unknown_seller: 'No Admin > Visão Geral, revise a Qualidade dos Dados e sincronize após corrigir vendedores na fonte.',
+  missing_product: 'No Admin > Visão Geral, revise a Qualidade dos Dados e sincronize após corrigir ramos na fonte.',
+  missing_value: 'No Admin > Visão Geral, revise a Qualidade dos Dados e sincronize após corrigir prêmio/comissão.'
 };
 
 const App: React.FC = () => {
@@ -66,6 +66,7 @@ const App: React.FC = () => {
   const [exceptionsSearch, setExceptionsSearch] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
   const [activeTab, setActiveTab] = useState<'ops' | 'admin'>('ops');
+  const [adminFocus, setAdminFocus] = useState<'quality' | null>(null);
 
   const inputClass =
     'bg-param-bg border border-param-border text-xs text-white px-3 py-2 h-10 rounded-[10px] focus:outline-none focus:border-param-primary focus:ring-2 focus:ring-param-primary/30 w-full';
@@ -199,6 +200,7 @@ const App: React.FC = () => {
 
   const handleExceptionAction = (type: string) => {
     setExceptionsOpen(false);
+    setAdminFocus('quality');
     setActiveTab('admin');
     setOpsHint(exceptionActionHints[type] || 'Abra o painel Admin para corrigir esta exceção.');
   };
@@ -234,6 +236,17 @@ const App: React.FC = () => {
     const timer = setTimeout(() => setOpsHint(''), 7000);
     return () => clearTimeout(timer);
   }, [opsHint]);
+
+  useEffect(() => {
+    if (activeTab !== 'admin' || !adminFocus) return;
+    const timer = setTimeout(() => {
+      if (adminFocus === 'quality') {
+        document.getElementById('admin-quality-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+      setAdminFocus(null);
+    }, 120);
+    return () => clearTimeout(timer);
+  }, [activeTab, adminFocus]);
 
   const filterOptions = useMemo(() => {
     const vendors = data?.filters?.vendors || [];
