@@ -7,6 +7,10 @@ import {
   SNAPSHOT_MONEY_UNIT,
   SNAPSHOT_VERSION
 } from '../services/snapshotService.js';
+import { config } from '../config.js';
+import { query } from '../db.js';
+import { getRulesVersionById, getRulesVersionForDate } from '../services/rulesService.js';
+import { startOfMonth } from '../utils/date.js';
 import { logError, logInfo, logWarn } from '../utils/logger.js';
 
 const router = express.Router();
@@ -112,6 +116,76 @@ router.get('/scenarios', async (req, res) => {
       error: error.message
     });
     return res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/status', async (req, res) => {
+  const monthRef = req.query.month_ref || req.query.month;
+  if (!isValidMonth(monthRef)) {
+    logWarn('snapshot', 'Parametro month_ref invalido', { month_ref: monthRef });
+    return res.status(400).json({ error: 'month_ref inválido (YYYY-MM)' });
+  }
+  try {
+    const lockedByConfig = config.ingest.lockedMonths.includes(monthRef);
+    const lockRow = await query(
+      'SELECT is_closed, reason, closed_at, closed_by FROM month_locks WHERE month_ref = $1 LIMIT 1',
+      [monthRef]
+    );
+    const lockedByDb = lockRow.rowCount > 0 ? Boolean(lockRow.rows[0].is_closed) : false;
+    const lockReason = lockedByConfig
+      ? 'Mês bloqueado por configuração.'
+      : lockRow.rowCount > 0
+      ? lockRow.rows[0].reason || 'Mês bloqueado.'
+      : null;
+
+    const snapshotRow = await query(
+      `SELECT created_at, rules_version_id
+       FROM snapshots_month
+       WHERE month_ref = $1 AND scenario_id IS NULL
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [monthRef]
+    );
+    const lastSnapshotAt = snapshotRow.rowCount > 0 ? snapshotRow.rows[0].created_at : null;
+    const rulesVersionId = snapshotRow.rowCount > 0 ? snapshotRow.rows[0].rules_version_id : null;
+
+    const ingestion = await query(
+      'SELECT status FROM ingestion_runs ORDER BY started_at DESC LIMIT 1'
+    );
+    const ingestionStatus = ingestion.rowCount > 0 ? ingestion.rows[0].status : 'UNKNOWN';
+
+    let state = 'OPEN';
+    if (lockedByConfig || lockedByDb) state = 'CLOSED';
+    else if (ingestionStatus === 'RUNNING') state = 'PROCESSING';
+
+    const rules =
+      (rulesVersionId ? await getRulesVersionById(rulesVersionId) : null) ||
+      (await getRulesVersionForDate(startOfMonth(monthRef)));
+
+    return res.json({
+      month_ref: monthRef,
+      state,
+      last_snapshot_at: lastSnapshotAt,
+      lock_reason: lockReason,
+      lock_source: lockedByConfig ? 'config' : lockedByDb ? 'db' : null,
+      rules: rules
+        ? {
+            rules_version_id: rules.rules_version_id,
+            effective_from: rules.effective_from,
+            meta_global_comissao: Number(rules.meta_global_comissao),
+            dias_uteis: Number(rules.dias_uteis),
+            created_at: rules.created_at || null,
+            created_by: rules.created_by || null,
+            audit_note: rules.audit_note || null
+          }
+        : null
+    });
+  } catch (error) {
+    logError('snapshot', 'Falha ao consultar status do mês', {
+      month_ref: monthRef,
+      error: error.message
+    });
+    return res.status(500).json({ error: 'Falha ao consultar status do mês.' });
   }
 });
 

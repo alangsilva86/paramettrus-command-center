@@ -10,8 +10,9 @@ interface ZoneGameProps {
 }
 
 const ZoneGame: React.FC<ZoneGameProps> = ({ leaderboard, vendorStats }) => {
-  const [metric, setMetric] = useState<'xp' | 'comissao' | 'premio' | 'growth'>('xp');
+  const [metric, setMetric] = useState<'xp' | 'comissao' | 'growth'>('xp');
   const [activeVendor, setActiveVendor] = useState<string | null>(null);
+  const [showAll, setShowAll] = useState(false);
 
   const badgesMap = useMemo(() => {
     return new Map(leaderboard.map((row) => [row.vendedor_id, row.badges || []]));
@@ -36,7 +37,6 @@ const ZoneGame: React.FC<ZoneGameProps> = ({ leaderboard, vendorStats }) => {
     const copied = [...stats];
     copied.sort((a, b) => {
       if (metric === 'growth') return (b.growth_mom_pct || 0) - (a.growth_mom_pct || 0);
-      if (metric === 'premio') return (b.premio || 0) - (a.premio || 0);
       if (metric === 'comissao') return (b.comissao || 0) - (a.comissao || 0);
       return (b.xp || 0) - (a.xp || 0);
     });
@@ -48,11 +48,11 @@ const ZoneGame: React.FC<ZoneGameProps> = ({ leaderboard, vendorStats }) => {
     if (metric === 'growth') {
       return Math.max(1, ...sortedStats.map((row) => Math.abs(row.growth_mom_pct || 0)));
     }
-    if (metric === 'premio') return Math.max(1, ...sortedStats.map((row) => row.premio || 0));
     if (metric === 'comissao') return Math.max(1, ...sortedStats.map((row) => row.comissao || 0));
     return Math.max(1, ...sortedStats.map((row) => row.xp || 0));
   }, [sortedStats, metric]);
 
+  const visibleStats = useMemo(() => (showAll ? sortedStats : sortedStats.slice(0, 8)), [sortedStats, showAll]);
   const activeVendorId = activeVendor || sortedStats[0]?.vendedor_id || null;
   const activeStats = sortedStats.find((row) => row.vendedor_id === activeVendorId) || null;
 
@@ -100,7 +100,6 @@ const ZoneGame: React.FC<ZoneGameProps> = ({ leaderboard, vendorStats }) => {
             {[
               { key: 'xp', label: 'XP' },
               { key: 'comissao', label: 'Comissão' },
-              { key: 'premio', label: 'Prêmio' },
               { key: 'growth', label: 'Crescimento' }
             ].map((option) => (
               <button
@@ -120,13 +119,11 @@ const ZoneGame: React.FC<ZoneGameProps> = ({ leaderboard, vendorStats }) => {
         }
       >
         <div className="flex flex-col gap-3 overflow-y-auto pr-2 max-h-[250px] brutal-scroll">
-          {sortedStats.map((rank, index) => {
+          {visibleStats.map((rank, index) => {
             const isTop = index === 0;
             const metricValue =
               metric === 'growth'
                 ? rank.growth_mom_pct || 0
-                : metric === 'premio'
-                ? rank.premio || 0
                 : metric === 'comissao'
                 ? rank.comissao || 0
                 : rank.xp || 0;
@@ -160,8 +157,6 @@ const ZoneGame: React.FC<ZoneGameProps> = ({ leaderboard, vendorStats }) => {
                      <span className="font-bold text-param-accent">
                        {metric === 'growth'
                          ? `${(metricValue * 100).toFixed(1)}%`
-                         : metric === 'premio'
-                         ? formatCurrencyBRL(metricValue)
                          : metric === 'comissao'
                          ? formatCurrencyBRL(metricValue)
                          : `${Math.floor(metricValue).toLocaleString()} XP`}
@@ -191,6 +186,15 @@ const ZoneGame: React.FC<ZoneGameProps> = ({ leaderboard, vendorStats }) => {
           })}
           {sortedStats.length === 0 && <div className="text-gray-500 text-center italic">Calculando Ledger...</div>}
         </div>
+        {sortedStats.length > 8 && (
+          <button
+            type="button"
+            onClick={() => setShowAll((prev) => !prev)}
+            className="mt-3 text-[10px] uppercase tracking-widest text-white/60 hover:text-white"
+          >
+            {showAll ? 'Mostrar top 8' : 'Ver cauda longa'}
+          </button>
+        )}
       </WidgetCard>
 
       {/* Widget E: Foco do Vendedor */}

@@ -10,6 +10,11 @@ import {
   RulesVersionItem,
   StatusResponse
 } from '../types';
+import {
+  DataQualityResponse,
+  ExceptionsListResponse,
+  SnapshotStatusResponse
+} from '../src/types/ops';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
@@ -231,6 +236,43 @@ export const reprocessSnapshot = async (
   const response = await fetch(`${API_BASE}/api/snapshots/month?${params.toString()}`);
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response, 'Falha ao reprocessar mês'));
+  }
+  return response.json();
+};
+
+export const fetchDataQuality = async (monthRef: string): Promise<DataQualityResponse> => {
+  const params = new URLSearchParams({ month_ref: monthRef });
+  const response = await fetch(`${API_BASE}/api/status/data-quality?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, 'Falha ao carregar qualidade dos dados'));
+  }
+  return response.json();
+};
+
+export const fetchExceptionsList = async (
+  monthRef: string,
+  type: string,
+  limit = 20,
+  offset = 0
+): Promise<ExceptionsListResponse> => {
+  const params = new URLSearchParams({
+    month_ref: monthRef,
+    type,
+    limit: String(limit),
+    offset: String(offset)
+  });
+  const response = await fetch(`${API_BASE}/api/status/exceptions?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, 'Falha ao carregar exceções'));
+  }
+  return response.json();
+};
+
+export const fetchSnapshotStatus = async (monthRef: string): Promise<SnapshotStatusResponse> => {
+  const params = new URLSearchParams({ month_ref: monthRef });
+  const response = await fetch(`${API_BASE}/api/snapshots/status?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, 'Falha ao carregar status do mês'));
   }
   return response.json();
 };

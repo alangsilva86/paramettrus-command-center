@@ -98,7 +98,7 @@ const ZoneStrategy: React.FC<ZoneStrategyProps> = ({ data, crossSell }) => {
                 {radar.bubble_products.map((entry, index) => (
                   <Cell
                     key={`cell-${index}`}
-                    fill={entry.ramo === 'AUTO' ? '#05400B' : '#0B7F16'}
+                    fill={entry.ramo === 'AUTO' ? '#FF6B06' : '#F59E0B'}
                     fillOpacity={0.75}
                   />
                 ))}
@@ -108,11 +108,11 @@ const ZoneStrategy: React.FC<ZoneStrategyProps> = ({ data, crossSell }) => {
         </div>
         <div className="absolute top-4 right-4 flex gap-3">
              <div className="flex items-center gap-1">
-                 <div className="w-2 h-2 rounded-full bg-param-accent"></div>
+                 <div className="w-2 h-2 rounded-full bg-param-primary"></div>
                  <span className="text-[10px] text-gray-500">AUTO</span>
              </div>
              <div className="flex items-center gap-1">
-                 <div className="w-2 h-2 rounded-full bg-param-primary"></div>
+                 <div className="w-2 h-2 rounded-full bg-param-warning"></div>
                  <span className="text-[10px] text-gray-500">OUTROS</span>
              </div>
         </div>
