@@ -49,8 +49,11 @@ const ProcessingTab: React.FC<ProcessingTabProps> = ({
   onSimulate,
   onPublish
 }) => {
-  const topRank = scenarioSnapshot?.leaderboard?.[0];
-  const secondRank = scenarioSnapshot?.leaderboard?.[1];
+  const filteredLeaderboard = (scenarioSnapshot?.leaderboard || []).filter(
+    (row) => row.vendedor_id && row.vendedor_id.toLowerCase() !== 'unknown'
+  );
+  const topRank = filteredLeaderboard[0];
+  const secondRank = filteredLeaderboard[1];
   const rankingSummary = topRank
     ? `1º ${topRank.vendedor_id}${secondRank ? `, 2º ${secondRank.vendedor_id}` : ''}`
     : 'Sem ranking disponível';
@@ -65,6 +68,15 @@ const ProcessingTab: React.FC<ProcessingTabProps> = ({
     : 'Simule para visualizar impactos no ranking.';
 
   const monthLocked = monthStatus?.is_closed;
+  const deltaValues = scenarioCompare
+    ? [
+        Number(scenarioCompare.delta.kpis.comissao_mtd || 0),
+        Number(scenarioCompare.delta.kpis.premio_mtd || 0),
+        Number(scenarioCompare.delta.kpis.forecast_comissao || 0),
+        Number(scenarioCompare.delta.kpis.gap_diario || 0)
+      ]
+    : [];
+  const hasMeaningfulDelta = deltaValues.some((value) => Math.abs(value) > 0.01);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -98,6 +110,9 @@ const ProcessingTab: React.FC<ProcessingTabProps> = ({
             <div className="text-sm font-bold text-white">{draftStatusLabel}</div>
             <div className="text-[10px] text-white/40 mt-1">
               Última simulação: {formatDateTime(lastSimulatedAt)}
+            </div>
+            <div className="text-[10px] text-white/50 mt-2">
+              A simulação usa o rascunho apenas como prévia. O Ops só muda após “Oficializar”.
             </div>
           </div>
 
@@ -135,6 +150,11 @@ const ProcessingTab: React.FC<ProcessingTabProps> = ({
                 <div className="text-[10px] uppercase tracking-widest text-gray-500">Ranking previsto</div>
                 <div className="text-lg font-bold text-white">{rankingSummary}</div>
                 <div className="text-[10px] text-white/50 mt-1">{impactMessage}</div>
+                {!hasMeaningfulDelta && (
+                  <div className="text-[10px] text-white/50 mt-2">
+                    Nenhuma mudança detectada nos KPIs principais. Alterações apenas de meta afetam ritmo e gap.
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">

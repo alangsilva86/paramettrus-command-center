@@ -60,9 +60,15 @@ const DEFAULT_BONUSES = {
 const sortEntries = (entries: Array<[string, string]>) =>
   entries.sort(([a], [b]) => a.localeCompare(b));
 
+const normalizeDateInput = (value?: string | null) => {
+  if (!value) return '';
+  const match = String(value).match(/\d{4}-\d{2}-\d{2}/);
+  return match ? match[0] : '';
+};
+
 const buildPayload = (draft: RulesDraft) => ({
-  effective_from: draft.effective_from,
-  effective_to: draft.effective_to || null,
+  effective_from: normalizeDateInput(draft.effective_from),
+  effective_to: normalizeDateInput(draft.effective_to) || null,
   meta_global_comissao: Number(draft.meta_global_comissao || 0),
   dias_uteis: Number(draft.dias_uteis || 0),
   product_weights: Object.fromEntries(
@@ -79,6 +85,12 @@ const buildPayload = (draft: RulesDraft) => ({
 const validateDraft = (draft: RulesDraft): RulesValidation => {
   const messages: string[] = [];
   const fieldErrors: Record<string, string> = {};
+
+  const effectiveFrom = normalizeDateInput(draft.effective_from);
+  if (!effectiveFrom) {
+    messages.push('Defina a data de vigência.');
+    fieldErrors.effective_from = 'Vigência inválida';
+  }
 
   const meta = Number(draft.meta_global_comissao || 0);
   if (!meta || meta <= 0) {
@@ -217,8 +229,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
     if (latestRule && !draftTouched) {
       setDraft((prev) => ({
         ...prev,
-        effective_from: latestRule.effective_from || prev.effective_from,
-        effective_to: latestRule.effective_to || '',
+        effective_from: normalizeDateInput(latestRule.effective_from) || prev.effective_from,
+        effective_to: normalizeDateInput(latestRule.effective_to) || '',
         meta_global_comissao: String(latestRule.meta_global_comissao ?? prev.meta_global_comissao),
         dias_uteis: String(latestRule.dias_uteis ?? prev.dias_uteis),
         product_weights: Object.fromEntries(
@@ -358,8 +370,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
     setDraftTouched(false);
     setDraft((prev) => ({
       ...prev,
-      effective_from: latestRule.effective_from || prev.effective_from,
-      effective_to: latestRule.effective_to || '',
+      effective_from: normalizeDateInput(latestRule.effective_from) || prev.effective_from,
+      effective_to: normalizeDateInput(latestRule.effective_to) || '',
       meta_global_comissao: String(latestRule.meta_global_comissao ?? prev.meta_global_comissao),
       dias_uteis: String(latestRule.dias_uteis ?? prev.dias_uteis),
       product_weights: Object.fromEntries(

@@ -53,6 +53,15 @@ const normalizeDecimalOnBlur = (value: string, min = 0, maxDecimals = 2) => {
   return String(rounded);
 };
 
+const formatRuleDate = (value?: string | null) => {
+  if (!value) return '—';
+  const match = String(value).match(/\d{4}-\d{2}-\d{2}/);
+  const dateValue = match ? match[0] : value;
+  const date = new Date(dateValue);
+  if (Number.isNaN(date.getTime())) return dateValue;
+  return date.toLocaleDateString('pt-BR');
+};
+
 const CurrencyInput: React.FC<{
   value: string;
   onChange: (value: string) => void;
@@ -248,7 +257,7 @@ const RulesTab: React.FC<RulesTabProps> = ({
             </div>
           </div>
           <div className="text-[10px] text-gray-500">
-            Vigente desde {publishedRule?.effective_from || '—'} | Dias úteis: {publishedRule?.dias_uteis ?? '—'}
+            Vigente desde {formatRuleDate(publishedRule?.effective_from)} | Dias úteis: {publishedRule?.dias_uteis ?? '—'}
           </div>
           <div className="text-[10px] text-gray-500">
             Última revisão: {publishedRule?.created_at ? new Date(publishedRule.created_at).toLocaleDateString('pt-BR') : '—'}
@@ -272,6 +281,12 @@ const RulesTab: React.FC<RulesTabProps> = ({
 
       <WidgetCard title="Configuração da Regra" className="lg:col-span-2">
         <div className="flex flex-col gap-4 text-xs text-gray-300">
+          {draftTouched && (
+            <div className="border border-param-warning/60 bg-param-warning/10 text-param-warning px-3 py-2 rounded-[10px] text-[10px]">
+              Alterações ficam como rascunho. Próximo passo: simular cenário na aba "Fechamento & Simulação" e oficializar
+              para refletir no Ops.
+            </div>
+          )}
           {!validation.isValid && (
             <div className="border border-param-danger/60 bg-param-danger/10 text-param-danger px-3 py-2 rounded-[10px] text-[10px]">
               {validation.messages.join(' ')}
@@ -293,7 +308,7 @@ const RulesTab: React.FC<RulesTabProps> = ({
                   placeholder="R$ 0,00"
                 />
                 <div className="text-[10px] text-gray-500 mt-1">
-                  Qual o alvo de comissão para o time este mês?
+                  Alterações não mudam o Ops até a simulação e publicação.
                 </div>
               </div>
               <div>
