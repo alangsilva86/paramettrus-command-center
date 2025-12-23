@@ -100,14 +100,23 @@ const fetchContractsForMonth = async (monthRef) => {
   return result.rows;
 };
 
-export const computeLedgerForMonth = async ({ monthRef, scenarioId = null, force = false, rulesVersionId = null }) => {
+export const computeLedgerForMonth = async ({
+  monthRef,
+  scenarioId = null,
+  force = false,
+  rulesVersionId = null,
+  rulesOverride = null
+}) => {
   if (!monthRef) throw new Error('monthRef obrigatório');
+
+  const overrideRules =
+    rulesOverride || (rulesVersionId ? await getRulesVersionById(rulesVersionId) : null);
 
   logInfo('ledger', 'Iniciando calculo de XP', {
     month_ref: monthRef,
     scenario_id: scenarioId,
     force,
-    rules_version_id: rulesVersionId || 'auto'
+    rules_version_id: overrideRules?.rules_version_id || rulesVersionId || 'auto'
   });
 
   if (config.ingest.lockedMonths.includes(monthRef) && !force) {
@@ -132,8 +141,6 @@ export const computeLedgerForMonth = async ({ monthRef, scenarioId = null, force
   const renewedContracts = await getRenewedContractsSet(
     monthContracts.map((contract) => contract.contract_id)
   );
-
-  const overrideRules = rulesVersionId ? await getRulesVersionById(rulesVersionId) : null;
 
   logInfo('ledger', 'Contratos carregados', {
     total_contratos: allContracts.length,

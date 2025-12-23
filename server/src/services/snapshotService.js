@@ -601,6 +601,7 @@ export const buildMonthlySnapshot = async ({
   scenarioId = null,
   force = false,
   rulesVersionId = null,
+  rulesOverride = null,
   filters = {},
   persist = true
 }) => {
@@ -609,16 +610,26 @@ export const buildMonthlySnapshot = async ({
     month_ref: monthRef,
     scenario_id: scenarioId,
     force,
-    rules_version_id: rulesVersionId || 'auto',
+    rules_version_id: rulesOverride?.rules_version_id || rulesVersionId || 'auto',
     filters
   });
 
   const monthStart = startOfMonth(monthRef);
-  const overrideRules = rulesVersionId ? await getRulesVersionById(rulesVersionId) : null;
+  const overrideRules =
+    rulesOverride || (rulesVersionId ? await getRulesVersionById(rulesVersionId) : null);
+  if (rulesVersionId && !overrideRules) {
+    throw new Error('rules_version_id inválido');
+  }
   const rules = overrideRules || (await getRulesVersionForDate(monthStart));
 
   const rulesVersionToUse = overrideRules ? overrideRules.rules_version_id : null;
-  await computeLedgerForMonth({ monthRef, scenarioId, force, rulesVersionId: rulesVersionToUse });
+  await computeLedgerForMonth({
+    monthRef,
+    scenarioId,
+    force,
+    rulesVersionId: rulesVersionToUse,
+    rulesOverride: overrideRules
+  });
 
   logInfo('snapshot', 'Regras aplicadas', {
     rules_version_id: rules.rules_version_id,
@@ -736,6 +747,10 @@ export const buildMonthlySnapshot = async ({
     month: monthRef,
     snapshot_version: SNAPSHOT_VERSION,
     money_unit: SNAPSHOT_MONEY_UNIT,
+    processing: {
+      duration_ms: Date.now() - startedAt,
+      generated_at: new Date().toISOString()
+    },
     data_coverage: dataCoverage,
     filters: filterOptions,
     kpis: {

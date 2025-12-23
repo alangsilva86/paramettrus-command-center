@@ -69,6 +69,10 @@ export interface DashboardSnapshot {
   created_at?: string | null;
   snapshot_version?: number;
   money_unit?: 'centavos' | 'reais';
+  processing?: {
+    duration_ms: number;
+    generated_at: string;
+  };
   data_coverage: DataCoverage;
   filters: {
     vendors: string[];
@@ -168,6 +172,22 @@ export interface StatusResponse {
   stale_data: boolean;
   environment?: string;
   api_base_url?: string;
+}
+
+export interface AdminHealthResponse {
+  status: 'ok' | 'error';
+  zoho?: { status: 'ok' | 'error'; count?: number; sample_id?: string | null; message?: string };
+  db?: { status: 'ok' | 'error'; message?: string };
+  last_ingestion_at?: string | null;
+  ingestion_status?: string;
+  error?: string;
+}
+
+export interface AdminMonthStatusResponse {
+  month_ref: string;
+  is_closed: boolean;
+  source?: 'config' | 'db' | null;
+  message?: string;
 }
 
 export interface AdminIngestResponse {

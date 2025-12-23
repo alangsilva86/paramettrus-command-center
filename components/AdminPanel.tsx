@@ -1,16 +1,34 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import WidgetCard from './WidgetCard';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   createRulesVersion,
-  fetchScenarioSnapshot,
+  fetchDashboardSnapshot,
+  fetchMonthStatus,
   fetchScenarioHistory,
   fetchSnapshotCompare,
-  listRulesVersions,
-  triggerIngestion
+  fetchZohoHealth,
+  reprocessSnapshot,
+  simulateScenarioDraft,
+  triggerIngestion,
+  listRulesVersions
 } from '../services/zohoService';
-import { DashboardSnapshot, RulesVersionItem, SnapshotCompare, StatusResponse } from '../types';
-import { RefreshCw, Play, Save, ShieldCheck, Sparkles } from 'lucide-react';
-import { formatCurrencyBRL, formatSignedCurrencyBRL } from '../utils/format';
+import {
+  AdminHealthResponse,
+  AdminMonthStatusResponse,
+  DashboardSnapshot,
+  RulesVersionItem,
+  SnapshotCompare,
+  StatusResponse,
+  DataCoverage
+} from '../types';
+import AdminHeader from '../src/components/admin/AdminHeader';
+import AdminTabs, { AdminTabItem } from '../src/components/admin/AdminTabs';
+import OverviewTab from '../src/components/admin/OverviewTab';
+import RulesTab from '../src/components/admin/RulesTab';
+import ProcessingTab from '../src/components/admin/ProcessingTab';
+import AuditTab from '../src/components/admin/AuditTab';
+import ToastStack, { ToastMessage } from '../src/components/admin/ToastStack';
+import ConfirmModal from '../src/components/admin/ConfirmModal';
+import { RulesDraft, RulesValidation } from '../src/components/admin/types';
 
 interface AdminPanelProps {
   monthRef: string;
@@ -39,26 +57,97 @@ const DEFAULT_BONUSES = {
   salvamento_d5: 600
 };
 
-const inputClass =
-  'bg-param-bg border border-param-border text-xs text-white px-3 py-2 h-10 rounded-[10px] focus:outline-none focus:border-param-primary focus:ring-2 focus:ring-param-primary/30';
+const sortEntries = (entries: Array<[string, string]>) =>
+  entries.sort(([a], [b]) => a.localeCompare(b));
 
-const AdminPanel: React.FC<AdminPanelProps> = ({ monthRef, status, onStatusRefresh, onReloadDashboard }) => {
+const buildPayload = (draft: RulesDraft) => ({
+  effective_from: draft.effective_from,
+  effective_to: draft.effective_to || null,
+  meta_global_comissao: Number(draft.meta_global_comissao || 0),
+  dias_uteis: Number(draft.dias_uteis || 0),
+  product_weights: Object.fromEntries(
+    sortEntries(Object.entries(draft.product_weights)).map(([key, value]) => [key, Number(value || 0)])
+  ),
+  bonus_events: Object.fromEntries(
+    sortEntries(Object.entries(draft.bonus_events)).map(([key, value]) => [key, Number(value || 0)])
+  ),
+  penalties: { churn_lock_xp: draft.churn_lock_xp },
+  audit_note: draft.audit_note || null,
+  force: draft.force
+});
+
+const validateDraft = (draft: RulesDraft): RulesValidation => {
+  const messages: string[] = [];
+  const fieldErrors: Record<string, string> = {};
+
+  const meta = Number(draft.meta_global_comissao || 0);
+  if (!meta || meta <= 0) {
+    messages.push('Meta mensal precisa ser maior que zero.');
+    fieldErrors.meta_global_comissao = 'Meta inválida';
+  }
+  const dias = Number(draft.dias_uteis || 0);
+  if (!dias || dias <= 0) {
+    messages.push('Dias úteis precisa ser maior que zero.');
+    fieldErrors.dias_uteis = 'Dias úteis inválido';
+  }
+
+  Object.entries(draft.product_weights || {}).forEach(([key, value]) => {
+    const weight = Number(value || 0);
+    if (weight < 0) {
+      messages.push(`Peso negativo em ${key} não é permitido.`);
+      fieldErrors[`weight_${key}`] = 'Peso negativo';
+    }
+  });
+
+  return {
+    isValid: messages.length === 0,
+    messages,
+    fieldErrors
+  };
+};
+
+const AdminPanel: React.FC<AdminPanelProps> = ({
+  monthRef,
+  status,
+  onStatusRefresh,
+  onReloadDashboard
+}) => {
   const [adminToken, setAdminToken] = useState(() => localStorage.getItem('param_admin_token') || '');
-  const [actor, setActor] = useState(() => localStorage.getItem('param_admin_actor') || 'admin-ui');
+  const [actor, setActor] = useState(() => localStorage.getItem('param_admin_actor') || 'gestor');
+  type AdminTabId = 'overview' | 'rules' | 'processing' | 'audit';
+  const [activeTab, setActiveTab] = useState<AdminTabId>('overview');
+
   const [rules, setRules] = useState<RulesVersionItem[]>([]);
   const [rulesLoading, setRulesLoading] = useState(false);
-  const [rulesMessage, setRulesMessage] = useState('');
-  const [rulesError, setRulesError] = useState('');
+
+  const [health, setHealth] = useState<AdminHealthResponse | null>(null);
+  const [healthLoading, setHealthLoading] = useState(false);
+
+  const [dataCoverage, setDataCoverage] = useState<DataCoverage | null>(null);
+  const [dataCoverageLoading, setDataCoverageLoading] = useState(false);
+  const [productOptions, setProductOptions] = useState<string[]>([]);
+
   const [ingestLoading, setIngestLoading] = useState(false);
-  const [scenarioLoading, setScenarioLoading] = useState(false);
+  const [ingestProgress, setIngestProgress] = useState(0);
+  const ingestTimer = useRef<NodeJS.Timeout | null>(null);
+
+  const [scenarioMonth, setScenarioMonth] = useState(monthRef);
   const [scenarioSnapshot, setScenarioSnapshot] = useState<DashboardSnapshot | null>(null);
   const [scenarioCompare, setScenarioCompare] = useState<SnapshotCompare | null>(null);
   const [scenarioHistory, setScenarioHistory] = useState<DashboardSnapshot[]>([]);
   const [scenarioHistoryLoading, setScenarioHistoryLoading] = useState(false);
-  const [activeSection, setActiveSection] = useState<'ops' | 'config' | 'scenario' | 'history'>('ops');
+  const [scenarioLoading, setScenarioLoading] = useState(false);
 
-  const [formTouched, setFormTouched] = useState(false);
-  const [formState, setFormState] = useState(() => ({
+  const [monthStatus, setMonthStatus] = useState<AdminMonthStatusResponse | null>(null);
+
+  const [publishLoading, setPublishLoading] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  const [lastSimulatedHash, setLastSimulatedHash] = useState<string | null>(null);
+  const [lastSimulatedAt, setLastSimulatedAt] = useState<string | null>(null);
+
+  const [draftTouched, setDraftTouched] = useState(false);
+  const [draft, setDraft] = useState<RulesDraft>(() => ({
     effective_from: new Date().toISOString().slice(0, 10),
     effective_to: '',
     meta_global_comissao: '170000',
@@ -70,21 +159,39 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ monthRef, status, onStatusRefre
     force: false
   }));
 
-  const [scenarioMonth, setScenarioMonth] = useState(monthRef);
-  const [scenarioId, setScenarioId] = useState(buildScenarioId());
-  const [scenarioRulesId, setScenarioRulesId] = useState('');
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
   const envLabel = (status?.environment || 'unknown').toUpperCase();
   const isProdEnv = envLabel.includes('PROD');
-  const envBadgeClass = isProdEnv
-    ? 'bg-param-danger/20 border-param-danger/60 text-param-danger'
-    : envLabel.includes('STAG')
-    ? 'bg-param-warning/20 border-param-warning/60 text-param-warning'
-    : 'bg-param-success/20 border-param-success/60 text-param-success';
 
-  const deltaTone = (value: number) => (value >= 0 ? 'text-param-success' : 'text-param-danger');
-  const formatDeltaValue = (value: number, isPct = false) => {
-    if (isPct) return `${value >= 0 ? '+' : ''}${(value * 100).toFixed(1)}%`;
-    return formatSignedCurrencyBRL(value);
+  const latestRule = useMemo(() => (rules.length > 0 ? rules[0] : null), [rules]);
+  const draftPayload = useMemo(() => buildPayload(draft), [draft]);
+  const draftHash = useMemo(() => JSON.stringify(draftPayload), [draftPayload]);
+  const validation = useMemo(() => validateDraft(draft), [draft]);
+
+  const draftStatusLabel = !draftTouched
+    ? 'Sem alterações pendentes'
+    : lastSimulatedHash && lastSimulatedHash === draftHash
+    ? 'Simulação pronta para publicar'
+    : 'Rascunho alterado (precisa simular)';
+
+  const publishBlockedReason = useMemo(() => {
+    if (monthStatus?.is_closed) return 'Mês fechado: publicação bloqueada.';
+    if (!validation.isValid) return 'Corrija os campos inválidos antes de publicar.';
+    if (!lastSimulatedHash) return 'Simule o cenário antes de publicar.';
+    if (lastSimulatedHash !== draftHash) return 'Rascunho mudou após a última simulação.';
+    return '';
+  }, [monthStatus, validation.isValid, lastSimulatedHash, draftHash]);
+
+  const canSimulate = validation.isValid && !monthStatus?.is_closed;
+  const canPublish = validation.isValid && !!lastSimulatedHash && lastSimulatedHash === draftHash && !monthStatus?.is_closed;
+
+  const pushToast = (type: ToastMessage['type'], message: string) => {
+    const id = `${Date.now()}_${Math.random()}`;
+    setToasts((prev) => [...prev, { id, type, message }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((toast) => toast.id !== id));
+    }, 4500);
   };
 
   useEffect(() => {
@@ -99,52 +206,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ monthRef, status, onStatusRefre
     setScenarioMonth(monthRef);
   }, [monthRef]);
 
-  const latestRule = useMemo(() => (rules.length > 0 ? rules[0] : null), [rules]);
-  const sections = [
-    { id: 'ops', label: 'Acesso & Ingestão', hint: 'Tokens e execução manual' },
-    { id: 'config', label: 'Regras', hint: 'Metas, pesos e bônus', count: rules.length },
-    { id: 'scenario', label: 'Cenários', hint: 'Simulação e comparação', count: scenarioHistory.length },
-    { id: 'history', label: 'Histórico', hint: 'Auditoria recente' }
-  ] as const;
-  const activeSectionMeta = sections.find((section) => section.id === activeSection);
-
-  const loadRules = async () => {
-    setRulesLoading(true);
-    setRulesError('');
-    try {
-      const items = await listRulesVersions(adminToken);
-      setRules(items);
-    } catch (error: any) {
-      setRulesError(error.message || 'Falha ao listar rules versions');
-    } finally {
-      setRulesLoading(false);
-    }
-  };
-
-  const loadScenarioHistory = async (targetMonth = scenarioMonth) => {
-    setScenarioHistoryLoading(true);
-    setRulesError('');
-    try {
-      const items = await fetchScenarioHistory(targetMonth);
-      setScenarioHistory(items);
-    } catch (error: any) {
-      setRulesError(error.message || 'Falha ao carregar histórico de cenários');
-    } finally {
-      setScenarioHistoryLoading(false);
-    }
-  };
-
   useEffect(() => {
-    loadRules();
-  }, [adminToken]);
-
-  useEffect(() => {
-    loadScenarioHistory();
+    setScenarioSnapshot(null);
+    setScenarioCompare(null);
+    setLastSimulatedHash(null);
+    setLastSimulatedAt(null);
   }, [scenarioMonth]);
 
   useEffect(() => {
-    if (latestRule && !formTouched) {
-      setFormState((prev) => ({
+    if (latestRule && !draftTouched) {
+      setDraft((prev) => ({
         ...prev,
         effective_from: latestRule.effective_from || prev.effective_from,
         effective_to: latestRule.effective_to || '',
@@ -160,649 +231,340 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ monthRef, status, onStatusRefre
         audit_note: latestRule.audit_note || ''
       }));
     }
-  }, [latestRule, formTouched]);
+  }, [latestRule, draftTouched]);
 
-  const handleWeightChange = (key: string, value: string) => {
-    setFormTouched(true);
-    setFormState((prev) => ({
+  useEffect(() => {
+    const loadRules = async () => {
+      setRulesLoading(true);
+      try {
+        const items = await listRulesVersions(adminToken);
+        setRules(items);
+      } catch (error: any) {
+        pushToast('error', error.message || 'Falha ao carregar regras');
+      } finally {
+        setRulesLoading(false);
+      }
+    };
+    loadRules();
+  }, [adminToken]);
+
+  useEffect(() => {
+    const loadHealth = async () => {
+      setHealthLoading(true);
+      try {
+        const payload = await fetchZohoHealth(adminToken, actor);
+        setHealth(payload);
+      } catch (error: any) {
+        setHealth({ status: 'error', error: error.message });
+        pushToast('error', error.message || 'Falha ao testar conexões');
+      } finally {
+        setHealthLoading(false);
+      }
+    };
+    loadHealth();
+  }, [adminToken, actor]);
+
+  useEffect(() => {
+    const loadDataCoverage = async () => {
+      setDataCoverageLoading(true);
+      try {
+        const snapshot = await fetchDashboardSnapshot(monthRef);
+        setDataCoverage(snapshot.data_coverage);
+        setProductOptions(snapshot.filters?.ramos || []);
+      } catch (error: any) {
+        pushToast('error', error.message || 'Falha ao carregar qualidade dos dados');
+      } finally {
+        setDataCoverageLoading(false);
+      }
+    };
+    loadDataCoverage();
+  }, [monthRef]);
+
+  useEffect(() => {
+    const loadScenarioHistory = async () => {
+      setScenarioHistoryLoading(true);
+      try {
+        const items = await fetchScenarioHistory(scenarioMonth);
+        setScenarioHistory(items);
+      } catch (error: any) {
+        pushToast('error', error.message || 'Falha ao carregar histórico de cenários');
+      } finally {
+        setScenarioHistoryLoading(false);
+      }
+    };
+    loadScenarioHistory();
+  }, [scenarioMonth]);
+
+  useEffect(() => {
+    const loadMonthStatus = async () => {
+      try {
+        const payload = await fetchMonthStatus(scenarioMonth, adminToken);
+        setMonthStatus(payload);
+      } catch (error: any) {
+        pushToast('error', error.message || 'Falha ao consultar bloqueio do mês');
+      }
+    };
+    loadMonthStatus();
+  }, [scenarioMonth, adminToken]);
+
+  useEffect(() => {
+    return () => {
+      if (ingestTimer.current) {
+        clearInterval(ingestTimer.current);
+      }
+    };
+  }, []);
+
+  const startIngestProgress = () => {
+    if (ingestTimer.current) clearInterval(ingestTimer.current);
+    setIngestProgress(8);
+    ingestTimer.current = setInterval(() => {
+      setIngestProgress((prev) => {
+        if (prev >= 92) return prev;
+        return prev + Math.random() * 6 + 2;
+      });
+    }, 700);
+  };
+
+  const stopIngestProgress = (success: boolean) => {
+    if (ingestTimer.current) clearInterval(ingestTimer.current);
+    setIngestProgress(success ? 100 : 0);
+    setTimeout(() => setIngestProgress(0), 1200);
+  };
+
+  const handleDraftFieldChange = (field: keyof RulesDraft, value: string | boolean) => {
+    setDraftTouched(true);
+    setDraft((prev) => ({ ...prev, [field]: value } as RulesDraft));
+  };
+
+  const handleWeightChange = (product: string, value: string) => {
+    setDraftTouched(true);
+    setDraft((prev) => ({
       ...prev,
-      product_weights: { ...prev.product_weights, [key]: value }
+      product_weights: { ...prev.product_weights, [product]: value }
     }));
   };
 
-  const handleBonusChange = (key: string, value: string) => {
-    setFormTouched(true);
-    setFormState((prev) => ({
+  const handleBonusChange = (bonusKey: string, value: string) => {
+    setDraftTouched(true);
+    setDraft((prev) => ({
       ...prev,
-      bonus_events: { ...prev.bonus_events, [key]: value }
+      bonus_events: { ...prev.bonus_events, [bonusKey]: value }
     }));
   };
 
-  const handleCreateRules = async () => {
-    setRulesMessage('');
-    setRulesError('');
-    try {
-      const payload = {
-        effective_from: formState.effective_from,
-        effective_to: formState.effective_to || null,
-        meta_global_comissao: Number(formState.meta_global_comissao || 0),
-        dias_uteis: Number(formState.dias_uteis || 0),
-        product_weights: Object.fromEntries(
-          Object.entries(formState.product_weights).map(([k, v]) => [k, Number(v || 0)])
-        ),
-        bonus_events: Object.fromEntries(
-          Object.entries(formState.bonus_events).map(([k, v]) => [k, Number(v || 0)])
-        ),
-        penalties: { churn_lock_xp: formState.churn_lock_xp },
-        audit_note: formState.audit_note || null,
-        force: formState.force
-      };
-
-      const result = await createRulesVersion(payload, adminToken, actor);
-      setRulesMessage(`Rules version criada: ${result.rules_version_id}`);
-      setFormTouched(false);
-      await loadRules();
-    } catch (error: any) {
-      setRulesError(error.message || 'Falha ao criar rules version');
-    }
+  const handleResetDraft = () => {
+    if (!latestRule) return;
+    setDraftTouched(false);
+    setDraft((prev) => ({
+      ...prev,
+      effective_from: latestRule.effective_from || prev.effective_from,
+      effective_to: latestRule.effective_to || '',
+      meta_global_comissao: String(latestRule.meta_global_comissao ?? prev.meta_global_comissao),
+      dias_uteis: String(latestRule.dias_uteis ?? prev.dias_uteis),
+      product_weights: Object.fromEntries(
+        Object.entries(latestRule.product_weights || DEFAULT_WEIGHTS).map(([k, v]) => [k, String(v)])
+      ),
+      bonus_events: Object.fromEntries(
+        Object.entries(latestRule.bonus_events || DEFAULT_BONUSES).map(([k, v]) => [k, String(v)])
+      ),
+      churn_lock_xp: Boolean(latestRule.penalties?.churn_lock_xp ?? true),
+      audit_note: latestRule.audit_note || ''
+    }));
+    pushToast('info', 'Rascunho revertido para a regra vigente.');
   };
 
   const handleRunIngestion = async () => {
-    setRulesMessage('');
-    setRulesError('');
     setIngestLoading(true);
+    startIngestProgress();
     try {
       await triggerIngestion(adminToken, actor);
-      setRulesMessage('Ingestão iniciada. Logs no console.');
+      pushToast('success', 'Sincronização iniciada. Você verá os dados atualizados em instantes.');
       await onStatusRefresh();
       onReloadDashboard();
+      stopIngestProgress(true);
     } catch (error: any) {
-      setRulesError(error.message || 'Falha ao rodar ingestão');
+      stopIngestProgress(false);
+      pushToast('error', error.message || 'Falha ao sincronizar dados');
     } finally {
       setIngestLoading(false);
     }
   };
 
-  const handleScenario = async () => {
+  const handleSimulate = async () => {
     setScenarioLoading(true);
-    setRulesError('');
     try {
-      const snapshot = await fetchScenarioSnapshot(
+      const scenarioId = buildScenarioId();
+      const snapshot = await simulateScenarioDraft(
         scenarioMonth,
         scenarioId,
-        scenarioRulesId || undefined
+        buildPayload(draft),
+        adminToken,
+        actor
       );
       setScenarioSnapshot(snapshot);
-      if (scenarioId) {
+      try {
         const compare = await fetchSnapshotCompare(scenarioMonth, scenarioId);
         setScenarioCompare(compare);
-      } else {
+      } catch (error: any) {
         setScenarioCompare(null);
+        pushToast('warning', error.message || 'Falha ao comparar cenário com o atual.');
       }
-      await loadScenarioHistory();
+      setLastSimulatedHash(draftHash);
+      setLastSimulatedAt(new Date().toISOString());
+      pushToast('success', 'Simulação concluída. Confira o impacto no ranking.');
+      const history = await fetchScenarioHistory(scenarioMonth);
+      setScenarioHistory(history);
     } catch (error: any) {
-      setRulesError(error.message || 'Falha ao simular cenário');
+      pushToast('error', error.message || 'Falha ao simular cenário');
     } finally {
       setScenarioLoading(false);
     }
   };
 
-  const renderOpsSection = () => (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-      <WidgetCard title="Acesso Admin" className="lg:col-span-1" alert={isProdEnv}>
-        <div className="flex flex-col gap-3 text-xs text-gray-300">
-          <div>
-            <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-1">Token Admin</div>
-            <input
-              type="password"
-              className={inputClass}
-              value={adminToken}
-              placeholder="x-admin-token"
-              onChange={(event) => setAdminToken(event.target.value)}
-            />
-          </div>
-          <div>
-            <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-1">Operador</div>
-            <input
-              type="text"
-              className={inputClass}
-              value={actor}
-              onChange={(event) => setActor(event.target.value)}
-            />
-          </div>
-          <div className="border-t border-param-border pt-3">
-            <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-2">Ambiente</div>
-            <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-[10px] border ${envBadgeClass}`}>
-              <span>ENV:</span>
-              <span className="font-bold">{envLabel}</span>
-            </div>
-            <div className="text-[10px] text-gray-600 mt-2">
-              API: {status?.api_base_url || 'não informado'}
-            </div>
-            <div className="text-[10px] text-gray-600 mt-1">
-              Tokens são salvos localmente neste navegador.
-            </div>
-          </div>
-        </div>
-      </WidgetCard>
+  const handlePublish = async () => {
+    setPublishLoading(true);
+    try {
+      const payload = buildPayload(draft);
+      const result = await createRulesVersion(payload, adminToken, actor);
+      await reprocessSnapshot(scenarioMonth, result.rules_version_id);
+      pushToast('success', 'Regras oficializadas e mês reprocessado.');
+      setDraftTouched(false);
+      setLastSimulatedHash(null);
+      const items = await listRulesVersions(adminToken);
+      setRules(items);
+      await onStatusRefresh();
+      onReloadDashboard();
+    } catch (error: any) {
+      pushToast('error', error.message || 'Falha ao publicar regras');
+    } finally {
+      setConfirmOpen(false);
+      setPublishLoading(false);
+    }
+  };
 
-      <WidgetCard title="Ingestão & Status" className="lg:col-span-2">
-        <div className="flex flex-col gap-3 text-xs text-gray-300">
-          <div className="flex items-center justify-between text-[10px] text-gray-500">
-            <span>Status</span>
-            <span className="flex items-center gap-1 text-gray-300">
-              <ShieldCheck className="w-3 h-3 text-param-success" />
-              {status?.status || 'UNKNOWN'}
-            </span>
-          </div>
-          <div className="text-[10px] text-gray-600">
-            Última execução: {status?.last_ingestion_at || '—'}
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={handleRunIngestion}
-              disabled={ingestLoading}
-              className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest px-4 py-2 h-10 rounded-[10px] border border-param-primary bg-param-primary text-white hover:brightness-110 disabled:opacity-50"
-            >
-              {ingestLoading ? 'Rodando...' : 'Rodar ingestão'}
-            </button>
-            <button
-              type="button"
-              onClick={onStatusRefresh}
-              className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest px-4 py-2 h-10 rounded-[10px] border border-param-border text-white/80 hover:border-param-primary"
-            >
-              <RefreshCw className="w-4 h-4" />
-              Atualizar status
-            </button>
-            <button
-              type="button"
-              onClick={onReloadDashboard}
-              className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest px-4 py-2 h-10 rounded-[10px] border border-param-border text-white/80 hover:border-param-primary"
-            >
-              <RefreshCw className="w-4 h-4" />
-              Atualizar painel
-            </button>
-          </div>
-        </div>
-      </WidgetCard>
-    </div>
-  );
-
-  const renderConfigSection = () => (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-      <WidgetCard title="Rules Version (Configuração)" className="lg:col-span-2">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 text-xs text-gray-300">
-          <div className="flex flex-col gap-3">
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-1">Efetiva em</div>
-                <input
-                  type="date"
-                  className={inputClass}
-                  value={formState.effective_from}
-                  onChange={(event) => {
-                    setFormTouched(true);
-                    setFormState((prev) => ({ ...prev, effective_from: event.target.value }));
-                  }}
-                />
-              </div>
-              <div>
-                <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-1">Meta Global</div>
-                <input
-                  type="number"
-                  className={inputClass}
-                  value={formState.meta_global_comissao}
-                  onChange={(event) => {
-                    setFormTouched(true);
-                    setFormState((prev) => ({ ...prev, meta_global_comissao: event.target.value }));
-                  }}
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-1">Dias úteis</div>
-                <input
-                  type="number"
-                  className={inputClass}
-                  value={formState.dias_uteis}
-                  onChange={(event) => {
-                    setFormTouched(true);
-                    setFormState((prev) => ({ ...prev, dias_uteis: event.target.value }));
-                  }}
-                />
-              </div>
-              <div>
-                <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-1">Vigência até</div>
-                <input
-                  type="date"
-                  className={inputClass}
-                  value={formState.effective_to}
-                  onChange={(event) => {
-                    setFormTouched(true);
-                    setFormState((prev) => ({ ...prev, effective_to: event.target.value }));
-                  }}
-                />
-              </div>
-            </div>
-            <div>
-              <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-2">Pesos por ramo</div>
-              <div className="grid grid-cols-3 gap-2">
-                {Object.keys(formState.product_weights).map((key) => (
-                  <div key={key}>
-                    <div className="text-[10px] text-gray-500 mb-1">{key}</div>
-                    <input
-                      type="number"
-                      step="0.1"
-                      className={inputClass}
-                      value={formState.product_weights[key]}
-                      onChange={(event) => handleWeightChange(key, event.target.value)}
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-3">
-            <div>
-              <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-2">Bônus</div>
-              <div className="grid grid-cols-2 gap-2">
-                {Object.keys(formState.bonus_events).map((key) => (
-                  <div key={key}>
-                    <div className="text-[10px] text-gray-500 mb-1">{key}</div>
-                    <input
-                      type="number"
-                      className={inputClass}
-                      value={formState.bonus_events[key]}
-                      onChange={(event) => handleBonusChange(key, event.target.value)}
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={formState.churn_lock_xp}
-                onChange={(event) => {
-                  setFormTouched(true);
-                  setFormState((prev) => ({ ...prev, churn_lock_xp: event.target.checked }));
-                }}
-              />
-              <span className="text-[10px] text-gray-400">Travar bônus com churn (RN02)</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={formState.force}
-                onChange={(event) => {
-                  setFormTouched(true);
-                  setFormState((prev) => ({ ...prev, force: event.target.checked }));
-                }}
-              />
-              <span className="text-[10px] text-gray-400">Permitir efetivo no passado (force)</span>
-            </div>
-            <div>
-              <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-1">Audit note</div>
-              <textarea
-                className={`${inputClass} min-h-[72px] h-auto`}
-                value={formState.audit_note}
-                onChange={(event) => {
-                  setFormTouched(true);
-                  setFormState((prev) => ({ ...prev, audit_note: event.target.value }));
-                }}
-              />
-            </div>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={handleCreateRules}
-                className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest px-4 py-2 h-10 rounded-[10px] border border-param-primary bg-param-primary text-white hover:brightness-110"
-              >
-                <Save className="w-4 h-4" />
-                Criar rules
-              </button>
-              <button
-                type="button"
-                onClick={loadRules}
-                className="text-[10px] font-bold uppercase tracking-widest px-4 py-2 h-10 rounded-[10px] border border-param-border text-white/80 hover:border-param-primary"
-              >
-                Atualizar lista
-              </button>
-            </div>
-          </div>
-        </div>
-      </WidgetCard>
-
-      <WidgetCard title="Histórico de Rules Versions" className="lg:col-span-1">
-        <div className="flex flex-col gap-3 text-xs text-gray-300">
-          {rulesLoading && <div className="text-gray-600 italic">Carregando rules...</div>}
-          {!rulesLoading && rules.length === 0 && (
-            <div className="text-gray-600 italic">Nenhuma rules version encontrada.</div>
-          )}
-          {!rulesLoading &&
-            rules.slice(0, 6).map((rule) => (
-              <div key={rule.rules_version_id} className="border border-param-border rounded-xl p-3">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-white">{rule.rules_version_id}</span>
-                  <span className="text-[10px] text-gray-500">{rule.effective_from}</span>
-                </div>
-                <div className="text-[10px] text-gray-500 mt-1">
-                  Meta: {formatCurrencyBRL(rule.meta_global_comissao || 0)}
-                </div>
-                <div className="text-[10px] text-gray-500">
-                  Dias úteis: {rule.dias_uteis}
-                </div>
-                <div className="flex items-center gap-2 text-[10px] text-gray-500 mt-2">
-                  <Sparkles className="w-3 h-3 text-param-primary" />
-                  {rule.audit_note || 'Sem audit note'}
-                </div>
-              </div>
-            ))}
-        </div>
-      </WidgetCard>
-    </div>
-  );
-
-  const renderScenarioSection = () => (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-      <WidgetCard title="Cenário (Simulação)" className="lg:col-span-2">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 text-xs text-gray-300">
-          <div className="flex flex-col gap-3">
-            <div>
-              <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-1">Mês</div>
-              <input
-                type="month"
-                className={inputClass}
-                value={scenarioMonth}
-                onChange={(event) => setScenarioMonth(event.target.value)}
-              />
-            </div>
-            <div>
-              <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-1">Scenario ID</div>
-              <input
-                type="text"
-                className={inputClass}
-                value={scenarioId}
-                onChange={(event) => setScenarioId(event.target.value)}
-              />
-              <button
-                type="button"
-                onClick={() => setScenarioId(buildScenarioId())}
-                className="mt-2 text-[10px] uppercase tracking-widest text-gray-500 hover:text-param-primary"
-              >
-                Gerar novo ID
-              </button>
-            </div>
-            <div>
-              <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-1">Rules version</div>
-              <select
-                className={inputClass}
-                value={scenarioRulesId}
-                onChange={(event) => setScenarioRulesId(event.target.value)}
-              >
-                <option value="">Auto (por data)</option>
-                {rules.map((rule) => (
-                  <option key={rule.rules_version_id} value={rule.rules_version_id}>
-                    {rule.rules_version_id}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <button
-              type="button"
-              onClick={handleScenario}
-              disabled={scenarioLoading}
-              className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest px-4 py-2 h-10 rounded-[10px] border border-param-accent text-param-accent hover:border-param-primary disabled:opacity-50"
-            >
-              <Play className="w-4 h-4" />
-              {scenarioLoading ? 'Simulando...' : 'Rodar cenário'}
-            </button>
-          </div>
-
-          <div className="lg:col-span-2">
-            <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-2">Resumo do cenário</div>
-            {scenarioSnapshot ? (
-              <div className="grid grid-cols-2 gap-3">
-                <div className="p-3 border border-param-border rounded-xl">
-                  <div className="text-[10px] text-gray-500">Forecast % meta</div>
-                  <div className="text-lg font-bold text-param-success">
-                    {(scenarioSnapshot.kpis.forecast_pct_meta * 100).toFixed(1)}%
-                  </div>
-                </div>
-                <div className="p-3 border border-param-border rounded-xl">
-                  <div className="text-[10px] text-gray-500">Gap diário</div>
-                  <div className="text-lg font-bold text-param-primary">
-                    {formatCurrencyBRL(scenarioSnapshot.kpis.gap_diario)}
-                  </div>
-                </div>
-                <div className="p-3 border border-param-border rounded-xl">
-                  <div className="text-[10px] text-gray-500">Auto share</div>
-                  <div className="text-lg font-bold text-param-danger">
-                    {(scenarioSnapshot.kpis.auto_share_comissao * 100).toFixed(1)}%
-                  </div>
-                </div>
-                <div className="p-3 border border-param-border rounded-xl">
-                  <div className="text-[10px] text-gray-500">XP Leaders</div>
-                  <div className="text-lg font-bold text-param-accent">
-                    {scenarioSnapshot.leaderboard.length}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="text-gray-600 italic">Sem cenário rodado ainda.</div>
-            )}
-
-            {scenarioCompare && (
-              <div className="mt-4 pt-3 border-t border-param-border">
-                <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-2">Delta vs Atual</div>
-                <div className="grid grid-cols-2 gap-3">
-                  {[
-                    { key: 'comissao_mtd', label: 'Comissão MTD' },
-                    { key: 'premio_mtd', label: 'Prêmio MTD' },
-                    { key: 'forecast_comissao', label: 'Forecast' },
-                    { key: 'gap_diario', label: 'Gap Diário' }
-                  ].map((item) => {
-                    const value = Number(scenarioCompare.delta.kpis[item.key] || 0);
-                    return (
-                      <div key={item.key} className="p-3 border border-param-border rounded-xl">
-                        <div className="text-[10px] text-gray-500">{item.label}</div>
-                        <div className={`text-sm font-bold ${deltaTone(value)}`}>
-                          {formatDeltaValue(value)}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                <div className="mt-3">
-                  <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-2">Mudanças de Ranking</div>
-                  <div className="space-y-2">
-                    {scenarioCompare.delta.ranking.map((item) => (
-                      <div key={item.vendedor_id} className="flex items-center justify-between text-[10px] text-gray-400">
-                        <span className="text-white font-bold">{item.vendedor_id}</span>
-                        <span>
-                          {item.base_rank ?? '—'} → {item.scenario_rank ?? '—'} (
-                          <span className={deltaTone(item.rank_delta || 0)}>
-                            {item.rank_delta !== null ? `${item.rank_delta >= 0 ? '+' : ''}${item.rank_delta}` : '—'}
-                          </span>
-                          )
-                        </span>
-                      </div>
-                    ))}
-                    {scenarioCompare.delta.ranking.length === 0 && (
-                      <div className="text-gray-600 italic">Sem variações relevantes.</div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="mt-3">
-                  <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-2">Mix (Δ share)</div>
-                  <div className="grid grid-cols-2 gap-2">
-                    {scenarioCompare.delta.mix.slice(0, 6).map((item) => (
-                      <div key={item.ramo} className="flex items-center justify-between text-[10px] text-gray-400">
-                        <span className="text-white font-bold">{item.ramo}</span>
-                        <span className={deltaTone(item.share_delta)}>
-                          {item.share_delta >= 0 ? '+' : ''}
-                          {(item.share_delta * 100).toFixed(1)}%
-                        </span>
-                      </div>
-                    ))}
-                    {scenarioCompare.delta.mix.length === 0 && (
-                      <div className="text-gray-600 italic">Sem variações de mix.</div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      </WidgetCard>
-
-      <WidgetCard title="Histórico de Cenários" className="lg:col-span-1">
-        <div className="flex flex-col gap-3 text-xs text-gray-300">
-          {scenarioHistoryLoading && <div className="text-gray-600 italic">Carregando cenários...</div>}
-          {!scenarioHistoryLoading && scenarioHistory.length === 0 && (
-            <div className="text-gray-600 italic">Nenhum cenário encontrado.</div>
-          )}
-          {!scenarioHistoryLoading &&
-            scenarioHistory.slice(0, 6).map((scenario) => (
-              <div key={scenario.scenario_id || scenario.month} className="border border-param-border rounded-xl p-3">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-white">{scenario.scenario_id || 'SCN'}</span>
-                  <span className="text-[10px] text-gray-500">
-                    {scenario.created_at ? new Date(scenario.created_at).toLocaleString('pt-BR') : '—'}
-                  </span>
-                </div>
-                <div className="text-[10px] text-gray-500 mt-1">
-                  Forecast: {(scenario.kpis.forecast_pct_meta * 100).toFixed(1)}%
-                </div>
-                <div className="text-[10px] text-gray-500">
-                  Gap diário: {formatCurrencyBRL(scenario.kpis.gap_diario)}
-                </div>
-              </div>
-            ))}
-        </div>
-      </WidgetCard>
-    </div>
-  );
-
-  const renderHistorySection = () => (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-      <WidgetCard title="Histórico de Rules Versions">
-        <div className="flex flex-col gap-3 text-xs text-gray-300">
-          {rulesLoading && <div className="text-gray-600 italic">Carregando rules...</div>}
-          {!rulesLoading && rules.length === 0 && (
-            <div className="text-gray-600 italic">Nenhuma rules version encontrada.</div>
-          )}
-          {!rulesLoading &&
-            rules.slice(0, 10).map((rule) => (
-              <div key={rule.rules_version_id} className="border border-param-border rounded-xl p-3">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-white">{rule.rules_version_id}</span>
-                  <span className="text-[10px] text-gray-500">{rule.effective_from}</span>
-                </div>
-                <div className="text-[10px] text-gray-500 mt-1">
-                  Meta: {formatCurrencyBRL(rule.meta_global_comissao || 0)}
-                </div>
-                <div className="text-[10px] text-gray-500">
-                  Dias úteis: {rule.dias_uteis}
-                </div>
-              </div>
-            ))}
-        </div>
-      </WidgetCard>
-
-      <WidgetCard title="Histórico de Cenários">
-        <div className="flex flex-col gap-3 text-xs text-gray-300">
-          {scenarioHistoryLoading && <div className="text-gray-600 italic">Carregando cenários...</div>}
-          {!scenarioHistoryLoading && scenarioHistory.length === 0 && (
-            <div className="text-gray-600 italic">Nenhum cenário encontrado.</div>
-          )}
-          {!scenarioHistoryLoading &&
-            scenarioHistory.slice(0, 10).map((scenario) => (
-              <div key={scenario.scenario_id || scenario.month} className="border border-param-border rounded-xl p-3">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-white">{scenario.scenario_id || 'SCN'}</span>
-                  <span className="text-[10px] text-gray-500">
-                    {scenario.created_at ? new Date(scenario.created_at).toLocaleString('pt-BR') : '—'}
-                  </span>
-                </div>
-                <div className="text-[10px] text-gray-500 mt-1">
-                  Forecast: {(scenario.kpis.forecast_pct_meta * 100).toFixed(1)}%
-                </div>
-                <div className="text-[10px] text-gray-500">
-                  Gap diário: {formatCurrencyBRL(scenario.kpis.gap_diario)}
-                </div>
-              </div>
-            ))}
-        </div>
-      </WidgetCard>
-    </div>
-  );
+  const tabs: AdminTabItem[] = [
+    {
+      id: 'overview',
+      label: 'Visão Geral & Conexões',
+      hint: 'Saúde das integrações e sincronização'
+    },
+    {
+      id: 'rules',
+      label: 'Regras do Jogo',
+      hint: 'Defina metas, pesos e bônus',
+      alert: draftTouched
+    },
+    {
+      id: 'processing',
+      label: 'Fechamento & Simulação',
+      hint: 'Simule antes de publicar e processe o mês'
+    },
+    {
+      id: 'audit',
+      label: 'Auditoria',
+      hint: 'Histórico de alterações e simulações',
+      badge: scenarioHistory.length
+    }
+  ];
 
   return (
     <div className="flex flex-col gap-4">
-      <div
-        className={`rounded-xl border px-4 py-3 ${
-          isProdEnv ? 'border-param-danger/60 bg-param-danger/10' : 'border-param-border bg-param-card'
-        }`}
-      >
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <div className="text-[10px] uppercase tracking-widest text-gray-500">Admin Console</div>
-            <div className="text-lg font-bold text-white">Controle, configuração e simulações</div>
-            <div className="text-[10px] text-gray-500 mt-1">
-              Ações aqui impactam diretamente o ambiente ativo.
-            </div>
-          </div>
-          <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-[10px] border ${envBadgeClass}`}>
-            <span>ENV:</span>
-            <span className="font-bold">{envLabel}</span>
-          </div>
-        </div>
-      </div>
+      <AdminHeader environmentLabel={envLabel} isProd={isProdEnv} />
 
-      {(rulesMessage || rulesError) && (
-        <div
-          className={`text-[10px] p-3 rounded-[10px] border ${
-            rulesError ? 'border-param-danger text-param-danger' : 'border-param-success text-param-success'
-          }`}
-        >
-          {rulesError || rulesMessage}
-        </div>
+      <AdminTabs tabs={tabs} activeTab={activeTab} onChange={(id) => setActiveTab(id as AdminTabId)} />
+
+      {activeTab === 'overview' && (
+        <OverviewTab
+          adminToken={adminToken}
+          actor={actor}
+          status={status}
+          health={health}
+          healthLoading={healthLoading}
+          ingestLoading={ingestLoading}
+          ingestProgress={ingestProgress}
+          dataCoverage={dataCoverage}
+          dataCoverageLoading={dataCoverageLoading}
+          environmentLabel={envLabel}
+          onAdminTokenChange={setAdminToken}
+          onActorChange={setActor}
+          onRefreshHealth={async () => {
+            try {
+              setHealthLoading(true);
+              const payload = await fetchZohoHealth(adminToken, actor);
+              setHealth(payload);
+              pushToast('success', 'Conexões verificadas com sucesso.');
+            } catch (error: any) {
+              setHealth({ status: 'error', error: error.message });
+              pushToast('error', error.message || 'Falha ao testar conexões');
+            } finally {
+              setHealthLoading(false);
+            }
+          }}
+          onRefreshStatus={onStatusRefresh}
+          onRunIngestion={handleRunIngestion}
+          onReloadDashboard={onReloadDashboard}
+          onShowQualityIssues={() => pushToast('info', 'Filtro detalhado em construção.')}
+        />
       )}
 
-      <div className="flex flex-wrap items-center gap-2 bg-param-card border border-param-border rounded-xl p-2">
-        {sections.map((section) => (
-          <button
-            key={section.id}
-            type="button"
-            onClick={() => setActiveSection(section.id)}
-            className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest rounded-[10px] transition-colors ${
-              activeSection === section.id ? 'bg-param-primary text-white' : 'text-white/60 hover:text-white'
-            }`}
-          >
-            {section.label}
-            {'count' in section && section.count !== undefined && (
-              <span className="ml-2 text-[10px] px-2 py-0.5 rounded-full border border-param-border text-white/70">
-                {section.count}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
+      {activeTab === 'rules' && (
+        <RulesTab
+          draft={draft}
+          validation={validation}
+          products={productOptions}
+          publishedRule={latestRule}
+          draftTouched={draftTouched}
+          onDraftFieldChange={handleDraftFieldChange}
+          onWeightChange={handleWeightChange}
+          onBonusChange={handleBonusChange}
+          onResetDraft={handleResetDraft}
+        />
+      )}
 
-      <div className="text-[10px] uppercase tracking-widest text-white/50">
-        {activeSectionMeta?.hint || 'Selecione uma seção'}
-      </div>
+      {activeTab === 'processing' && (
+        <ProcessingTab
+          scenarioMonth={scenarioMonth}
+          onScenarioMonthChange={setScenarioMonth}
+          scenarioSnapshot={scenarioSnapshot}
+          scenarioCompare={scenarioCompare}
+          scenarioLoading={scenarioLoading}
+          publishLoading={publishLoading}
+          canSimulate={canSimulate}
+          canPublish={canPublish}
+          publishBlockedReason={publishBlockedReason}
+          monthStatus={monthStatus}
+          lastSimulatedAt={lastSimulatedAt}
+          draftStatusLabel={draftStatusLabel}
+          onSimulate={handleSimulate}
+          onPublish={() => setConfirmOpen(true)}
+        />
+      )}
 
-      {activeSection === 'ops' && renderOpsSection()}
-      {activeSection === 'config' && renderConfigSection()}
-      {activeSection === 'scenario' && renderScenarioSection()}
-      {activeSection === 'history' && renderHistorySection()}
+      {activeTab === 'audit' && (
+        <AuditTab
+          rules={rules}
+          rulesLoading={rulesLoading}
+          scenarioHistory={scenarioHistory}
+          scenarioHistoryLoading={scenarioHistoryLoading}
+        />
+      )}
+
+      <ConfirmModal
+        open={confirmOpen}
+        title="Reprocessar mês inteiro"
+        description="Você está prestes a oficializar as regras e recalcular todo o mês selecionado. Essa ação impacta o painel de vendas e pode demorar alguns minutos."
+        confirmLabel="Oficializar e recalcular"
+        cancelLabel="Cancelar"
+        onCancel={() => setConfirmOpen(false)}
+        onConfirm={handlePublish}
+        loading={publishLoading}
+      />
+
+      <ToastStack
+        toasts={toasts}
+        onDismiss={(id) => setToasts((prev) => prev.filter((toast) => toast.id !== id))}
+      />
     </div>
   );
 };
