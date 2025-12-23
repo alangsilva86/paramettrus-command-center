@@ -1,8 +1,12 @@
 import { query } from '../db.js';
 import { config } from '../config.js';
 import { addDays, daysDiff, toDateOnly } from '../utils/date.js';
+import { toReais } from '../utils/money.js';
 import { buildStatusFilter } from '../utils/status.js';
 import { logInfo, logWarn } from '../utils/logger.js';
+
+const moneyUnit = config.money?.dbUnit || 'centavos';
+const toReaisDb = (value) => toReais(value, moneyUnit);
 
 const buildRenewalIndex = (contracts) => {
   const grouped = new Map();
@@ -67,8 +71,8 @@ const fetchContracts = async ({ vendorId = null, ramo = null } = {}) => {
             segurado_nome,
             vendedor_id,
             ramo,
-            premio / 100.0 AS premio,
-            comissao_valor / 100.0 AS comissao_valor,
+            premio,
+            comissao_valor,
             inicio,
             termino,
             status
@@ -76,7 +80,11 @@ const fetchContracts = async ({ vendorId = null, ramo = null } = {}) => {
      WHERE ${conditions.join(' AND ')}`,
     params
   );
-  return result.rows;
+  return result.rows.map((row) => ({
+    ...row,
+    premio: toReaisDb(row.premio),
+    comissao_valor: toReaisDb(row.comissao_valor)
+  }));
 };
 
 const loadLatestActions = async (contractIds) => {

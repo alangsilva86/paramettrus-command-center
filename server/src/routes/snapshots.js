@@ -3,7 +3,9 @@ import {
   buildMonthlySnapshot,
   compareSnapshots,
   getSnapshotCached,
-  listScenarioSnapshots
+  listScenarioSnapshots,
+  SNAPSHOT_MONEY_UNIT,
+  SNAPSHOT_VERSION
 } from '../services/snapshotService.js';
 import { logError, logInfo, logWarn } from '../utils/logger.js';
 
@@ -12,6 +14,8 @@ const router = express.Router();
 const isValidMonth = (value) => /^\d{4}-\d{2}$/.test(value);
 const isSnapshotCompatible = (snapshot) =>
   snapshot &&
+  snapshot.snapshot_version === SNAPSHOT_VERSION &&
+  snapshot.money_unit === SNAPSHOT_MONEY_UNIT &&
   snapshot.data_coverage &&
   snapshot.kpis &&
   snapshot.kpis.premio_mtd !== undefined &&

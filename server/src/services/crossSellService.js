@@ -1,7 +1,11 @@
 import { query } from '../db.js';
 import { config } from '../config.js';
 import { buildStatusFilter } from '../utils/status.js';
+import { toReais } from '../utils/money.js';
 import { logInfo, logWarn } from '../utils/logger.js';
+
+const moneyUnit = config.money?.dbUnit || 'centavos';
+const toReaisDb = (value) => toReais(value, moneyUnit);
 
 export const getCrossSellSummary = async ({ vendorId = null } = {}) => {
   logInfo('cross', 'Calculando resumo de cross-sell');
@@ -61,15 +65,19 @@ export const getCrossSellSummary = async ({ vendorId = null } = {}) => {
     const result = await query(
       `SELECT cpf_cnpj,
               MAX(segurado_nome) AS segurado_nome,
-              SUM(comissao_valor) / 100.0 AS comissao_total,
-              SUM(premio) / 100.0 AS premio_total
+              SUM(comissao_valor) AS comissao_total,
+              SUM(premio) AS premio_total
        FROM contracts_norm
        WHERE ${autoConditions.join(' AND ')}
        GROUP BY cpf_cnpj
        ORDER BY comissao_total DESC, premio_total DESC`,
       autoParams
     );
-    autoSemVida = result.rows;
+    autoSemVida = result.rows.map((row) => ({
+      ...row,
+      comissao_total: toReaisDb(row.comissao_total || 0),
+      premio_total: toReaisDb(row.premio_total || 0)
+    }));
   }
 
   if (total === 0) {

@@ -11,12 +11,23 @@ const required = (key, fallback = undefined) => {
   return value;
 };
 
+const normalizeMoneyUnit = (value, fallback) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'real' || normalized === 'reais') return 'reais';
+  if (normalized === 'centavo' || normalized === 'centavos') return 'centavos';
+  return fallback;
+};
+
 export const config = {
   env: process.env.APP_ENV || 'development',
   port: Number(process.env.PORT || 4000),
   databaseUrl: required('DATABASE_URL'),
   apiBaseUrl: process.env.API_BASE_URL || '',
   adminToken: process.env.ADMIN_TOKEN || '',
+  money: {
+    sourceUnit: normalizeMoneyUnit(process.env.MONEY_SOURCE_UNIT, 'reais'),
+    dbUnit: normalizeMoneyUnit(process.env.MONEY_DB_UNIT, 'centavos')
+  },
   scheduler: {
     enabled: process.env.ENABLE_SCHEDULER === 'true',
     cron: process.env.INGEST_CRON || '0 * * * *'

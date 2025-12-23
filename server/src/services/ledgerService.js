@@ -8,6 +8,9 @@ import { getVendorPenaltyMap } from './renewalService.js';
 import { config } from '../config.js';
 import { logInfo, logSuccess, logWarn } from '../utils/logger.js';
 
+const moneyUnit = config.money?.dbUnit || 'centavos';
+const toReaisDb = (value) => toReais(value, moneyUnit);
+
 const sortContracts = (a, b) => {
   if (a.data_efetivacao === b.data_efetivacao) {
     return String(a.contract_id).localeCompare(String(b.contract_id));
@@ -159,7 +162,7 @@ export const computeLedgerForMonth = async ({ monthRef, scenarioId = null, force
     const bonusEvents = rules.bonus_events || {};
     const weight = weights[contract.ramo] ?? 1;
 
-    const comissao = toReais(contract.comissao_valor);
+    const comissao = toReaisDb(contract.comissao_valor);
     const xpBase = Number(((comissao / 10) * weight).toFixed(2));
     let xpBonus = 0;
     const reasons = [];

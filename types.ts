@@ -67,6 +67,8 @@ export interface DashboardSnapshot {
   scenario_id?: string | null;
   rules_version_id?: string | null;
   created_at?: string | null;
+  snapshot_version?: number;
+  money_unit?: 'centavos' | 'reais';
   data_coverage: DataCoverage;
   filters: {
     vendors: string[];

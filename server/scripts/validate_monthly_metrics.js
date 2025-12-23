@@ -1,5 +1,6 @@
 import { query } from '../src/db.js';
 import { config } from '../src/config.js';
+import { toReais } from '../src/utils/money.js';
 import { buildStatusFilter } from '../src/utils/status.js';
 
 const expectedRows = [
@@ -91,8 +92,8 @@ if (statusFilter) {
 const sql = `
   SELECT month_ref,
          COUNT(DISTINCT contract_id)::int AS contratos,
-         COALESCE(SUM(premio),0) / 100.0 AS premio_total,
-         COALESCE(SUM(comissao_valor),0) / 100.0 AS comissao_total
+         COALESCE(SUM(premio),0) AS premio_total,
+         COALESCE(SUM(comissao_valor),0) AS comissao_total
   FROM contracts_norm
   WHERE ${conditions.join(' AND ')}
   GROUP BY month_ref
@@ -100,13 +101,15 @@ const sql = `
 `;
 const res = await query(sql, params);
 
+const moneyUnit = config.money?.dbUnit || 'centavos';
+
 const actualMap = new Map(
   res.rows.map((row) => [
     row.month_ref,
     {
       contratos: Number(row.contratos || 0),
-      premio: Number(row.premio_total || 0),
-      comissao: Number(row.comissao_total || 0)
+      premio: toReais(row.premio_total || 0, moneyUnit),
+      comissao: toReais(row.comissao_total || 0, moneyUnit)
     }
   ])
 );
@@ -118,6 +121,7 @@ const formatPct = (value) => `${number.format(value)}%`;
 
 const results = [];
 let failures = 0;
+let warnings = 0;
 
 for (const row of expected) {
   const actual = actualMap.get(row.month) || { contratos: 0, premio: 0, comissao: 0 };
@@ -137,13 +141,24 @@ for (const row of expected) {
   const pass = passContratos && passPremio && passComissao && passPct;
   if (!pass) failures += 1;
 
+  const sanityWarnings = [];
+  const pctMax = Number(config.quality?.comissaoPctMax ?? 0.5) * 100;
+  if (actual.premio > 0 && pctActual > pctMax) {
+    sanityWarnings.push(`pct_acima_max(${pctMax.toFixed(1)}%)`);
+  }
+  if (actual.premio > 0 && pctActual > 100) {
+    sanityWarnings.push('pct_acima_100');
+  }
+  if (sanityWarnings.length > 0) warnings += 1;
+
   results.push({
     month: row.month,
     contratos: `${actual.contratos} vs ${row.contratos} (${diffContratos >= 0 ? '+' : ''}${diffContratos})`,
     premio: `${formatMoney(actual.premio)} vs ${formatMoney(row.premio)} (${diffPremio >= 0 ? '+' : ''}${formatMoney(diffPremio)})`,
     comissao: `${formatMoney(actual.comissao)} vs ${formatMoney(row.comissao)} (${diffComissao >= 0 ? '+' : ''}${formatMoney(diffComissao)})`,
     pct: `${formatPct(pctRounded)} vs ${formatPct(row.pct)} (${diffPct >= 0 ? '+' : ''}${diffPct.toFixed(2)}pp)`,
-    pass
+    pass,
+    sanityWarnings
   });
 }
 
@@ -160,7 +175,7 @@ const statusMode =
     ? `exclude: ${config.contractStatus.exclude.join(', ')}`
     : 'all';
 console.log(`Status: ${statusMode}`);
-console.log(`Linhas avaliadas: ${results.length}, falhas: ${failures}`);
+console.log(`Linhas avaliadas: ${results.length}, falhas: ${failures}, alertas: ${warnings}`);
 console.log('');
 
 for (const row of results) {
@@ -170,6 +185,9 @@ for (const row of results) {
   console.log(`  premio:    ${row.premio}`);
   console.log(`  comissao:  ${row.comissao}`);
   console.log(`  pct:       ${row.pct}`);
+  if (row.sanityWarnings.length > 0) {
+    console.log(`  alerta:    ${row.sanityWarnings.join(', ')}`);
+  }
 }
 
 if (extraMonths.length > 0) {

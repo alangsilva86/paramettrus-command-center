@@ -25,9 +25,9 @@ CREATE TABLE IF NOT EXISTS contracts_norm (
   inicio DATE,
   termino DATE,
   status TEXT,
-  premio NUMERIC(14,2),
+  premio NUMERIC(14,0), -- stored in centavos
   comissao_pct NUMERIC(8,4),
-  comissao_valor NUMERIC(14,2),
+  comissao_valor NUMERIC(14,0), -- stored in centavos
   added_time TIMESTAMPTZ,
   modified_time TIMESTAMPTZ,
   row_hash TEXT NOT NULL,

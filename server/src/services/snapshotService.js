@@ -16,6 +16,14 @@ import { getRulesVersionById, getRulesVersionForDate } from './rulesService.js';
 import { getRenewalMetrics } from './renewalService.js';
 import { logInfo, logSuccess, logWarn } from '../utils/logger.js';
 
+export const SNAPSHOT_VERSION = 2;
+export const SNAPSHOT_MONEY_UNIT = config.money?.dbUnit || 'centavos';
+
+const toReaisDb = (value) => toReais(value, SNAPSHOT_MONEY_UNIT);
+const isSnapshotVersionCompatible = (snapshot) =>
+  snapshot?.snapshot_version === SNAPSHOT_VERSION &&
+  snapshot?.money_unit === SNAPSHOT_MONEY_UNIT;
+
 const shiftMonthRef = (monthRef, deltaMonths) => {
   const base = startOfMonth(monthRef);
   const shifted = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth() + deltaMonths, 1));
@@ -175,16 +183,16 @@ const getMonthlyAggregates = async ({ monthRef, filters = {}, cutoffDate = null 
   });
   const result = await query(
     `SELECT COUNT(DISTINCT contract_id)::int AS count,
-            COALESCE(SUM(comissao_valor), 0) / 100.0 AS comissao_total,
-            COALESCE(SUM(premio), 0) / 100.0 AS premio_total
+            COALESCE(SUM(comissao_valor), 0) AS comissao_total,
+            COALESCE(SUM(premio), 0) AS premio_total
      FROM contracts_norm
      WHERE ${conditions.join(' AND ')}`,
     params
   );
   const row = result.rows[0] || {};
   const count = Number(row.count || 0);
-  const comissaoTotal = Number(row.comissao_total || 0);
-  const premioTotal = Number(row.premio_total || 0);
+  const comissaoTotal = toReaisDb(row.comissao_total || 0);
+  const premioTotal = toReaisDb(row.premio_total || 0);
   const margemPct = premioTotal > 0 ? (comissaoTotal / premioTotal) * 100 : 0;
   const ticketMedio = count > 0 ? premioTotal / count : 0;
   return { count, comissaoTotal, premioTotal, margemPct, ticketMedio };
@@ -208,8 +216,8 @@ const getDailyTrend = async ({ monthRef, filters = {}, referenceDate, days = 14 
 
   const result = await query(
     `SELECT data_efetivacao::date AS day,
-            COALESCE(SUM(comissao_valor), 0) / 100.0 AS comissao_total,
-            COALESCE(SUM(premio), 0) / 100.0 AS premio_total
+            COALESCE(SUM(comissao_valor), 0) AS comissao_total,
+            COALESCE(SUM(premio), 0) AS premio_total
      FROM contracts_norm
      WHERE ${conditions.join(' AND ')}
      GROUP BY day
@@ -221,8 +229,8 @@ const getDailyTrend = async ({ monthRef, filters = {}, referenceDate, days = 14 
     result.rows.map((row) => [
       formatDate(row.day),
       {
-        comissao: Number(row.comissao_total || 0),
-        premio: Number(row.premio_total || 0)
+        comissao: toReaisDb(row.comissao_total || 0),
+        premio: toReaisDb(row.premio_total || 0)
       }
     ])
   );
@@ -256,13 +264,13 @@ const getLeaderboard = async (monthRef, scenarioId, filters = {}) => {
     ramo: filters.ramo
   });
   const contracts = await query(
-    `SELECT contract_id, comissao_valor / 100.0 AS comissao_valor
+    `SELECT contract_id, comissao_valor
      FROM contracts_norm
      WHERE ${conditions.join(' AND ')}`,
     params
   );
   const commByContract = new Map(
-    contracts.rows.map((row) => [row.contract_id, Number(row.comissao_valor || 0)])
+    contracts.rows.map((row) => [row.contract_id, toReaisDb(row.comissao_valor || 0)])
   );
 
   const vendorMap = new Map();
@@ -313,12 +321,12 @@ const getRadarData = (contractsRows, blackByRamo) => {
       ramoStats.set(ramo, { comm: 0, prem: 0, count: 0, black: 0 });
     }
     const stat = ramoStats.get(ramo);
-    stat.comm += toReais(row.comissao_valor);
-    stat.prem += toReais(row.premio);
+    stat.comm += toReaisDb(row.comissao_valor);
+    stat.prem += toReaisDb(row.premio);
     stat.count += 1;
 
     const insurer = row.seguradora || 'N/D';
-    insurerStats.set(insurer, (insurerStats.get(insurer) || 0) + toReais(row.comissao_valor));
+    insurerStats.set(insurer, (insurerStats.get(insurer) || 0) + toReaisDb(row.comissao_valor));
   });
 
   const insurerValues = Array.from(insurerStats.values());
@@ -378,15 +386,22 @@ const getMixAggregate = async ({ monthRef, filters = {}, field }) => {
   });
   const result = await query(
     `SELECT ${field} AS key,
-            COALESCE(SUM(comissao_valor), 0) / 100.0 AS comissao_total,
-            COALESCE(SUM(premio), 0) / 100.0 AS premio_total,
+            COALESCE(SUM(comissao_valor), 0) AS comissao_total,
+            COALESCE(SUM(premio), 0) AS premio_total,
             COUNT(DISTINCT contract_id)::int AS contracts_count
      FROM contracts_norm
      WHERE ${conditions.join(' AND ')}
      GROUP BY ${field}`,
     params
   );
-  return result.rows.filter((row) => row.key);
+  return result.rows
+    .filter((row) => row.key)
+    .map((row) => ({
+      ...row,
+      comissao_total: toReaisDb(row.comissao_total || 0),
+      premio_total: toReaisDb(row.premio_total || 0),
+      contracts_count: Number(row.contracts_count || 0)
+    }));
 };
 
 const median = (values) => {
@@ -531,15 +546,22 @@ const getVendorAggregates = async ({ monthRef, filters = {} }) => {
   });
   const result = await query(
     `SELECT vendedor_id,
-            COALESCE(SUM(comissao_valor), 0) / 100.0 AS comissao_total,
-            COALESCE(SUM(premio), 0) / 100.0 AS premio_total,
+            COALESCE(SUM(comissao_valor), 0) AS comissao_total,
+            COALESCE(SUM(premio), 0) AS premio_total,
             COUNT(DISTINCT contract_id)::int AS sales_count
      FROM contracts_norm
      WHERE ${conditions.join(' AND ')}
      GROUP BY vendedor_id`,
     params
   );
-  return result.rows.filter((row) => row.vendedor_id);
+  return result.rows
+    .filter((row) => row.vendedor_id)
+    .map((row) => ({
+      ...row,
+      comissao_total: toReaisDb(row.comissao_total || 0),
+      premio_total: toReaisDb(row.premio_total || 0),
+      sales_count: Number(row.sales_count || 0)
+    }));
 };
 
 const getVendorStats = async ({ monthRef, filters = {}, leaderboard = [], diasUteisRestantes, renewals }) => {
@@ -670,7 +692,7 @@ export const buildMonthlySnapshot = async ({
 
   const autoComm = contracts
     .filter((c) => c.ramo === 'AUTO')
-    .reduce((sum, c) => sum + toReais(c.comissao_valor), 0);
+    .reduce((sum, c) => sum + toReaisDb(c.comissao_valor), 0);
   const autoShare = comissaoMtd > 0 ? autoComm / comissaoMtd : 0;
   const monoprodutoPct = await getCustomersMonoprodutoPct(filters.vendorId || null);
 
@@ -711,6 +733,8 @@ export const buildMonthlySnapshot = async ({
 
   const snapshot = {
     month: monthRef,
+    snapshot_version: SNAPSHOT_VERSION,
+    money_unit: SNAPSHOT_MONEY_UNIT,
     data_coverage: dataCoverage,
     filters: filterOptions,
     kpis: {
@@ -791,18 +815,21 @@ export const listScenarioSnapshots = async ({ monthRef }) => {
      LIMIT 10`,
     [monthRef]
   );
-  return result.rows.map((row) => ({
-    ...row.data,
-    scenario_id: row.scenario_id,
-    rules_version_id: row.rules_version_id,
-    created_at: row.created_at
-  }));
+  return result.rows
+    .map((row) => ({
+      ...row.data,
+      scenario_id: row.scenario_id,
+      rules_version_id: row.rules_version_id,
+      created_at: row.created_at
+    }))
+    .filter((snapshot) => isSnapshotVersionCompatible(snapshot));
 };
 
 export const compareSnapshots = async ({ monthRef, scenarioId }) => {
   const base = await getSnapshotCached({ monthRef, scenarioId: null });
   const scenario = await getSnapshotCached({ monthRef, scenarioId });
   if (!base || !scenario) return null;
+  if (!isSnapshotVersionCompatible(base) || !isSnapshotVersionCompatible(scenario)) return null;
 
   const deltaFields = [
     'comissao_mtd',

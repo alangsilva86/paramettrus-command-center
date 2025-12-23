@@ -1,3 +1,5 @@
+import { toDbMoney } from './money.js';
+
 const stripAccents = (value) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
 export const normalizeText = (value) => {
@@ -21,6 +23,11 @@ export const normalizeMoney = (value) => {
     .replace(/[^\d.-]/g, '');
   const parsed = Number(normalized);
   return Number.isNaN(parsed) ? null : parsed;
+};
+
+export const normalizeMoneyToDb = (value, options) => {
+  const parsed = normalizeMoney(value);
+  return toDbMoney(parsed, options);
 };
 
 export const normalizeRamo = (produtoRaw) => {

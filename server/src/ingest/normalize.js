@@ -2,7 +2,7 @@ import { config } from '../config.js';
 import { sha256 } from '../utils/hash.js';
 import { aliasMaps, applyAlias } from '../utils/aliases.js';
 import { isValidCpfCnpj } from '../utils/cpfCnpj.js';
-import { normalizeCpfCnpj, normalizeMoney, normalizeRamo } from '../utils/normalize.js';
+import { normalizeCpfCnpj, normalizeMoney, normalizeMoneyToDb, normalizeRamo } from '../utils/normalize.js';
 import { daysDiff, formatDate, formatMonthRef, toDateOnly, toDateTime } from '../utils/date.js';
 
 const requiredFields = [
@@ -54,6 +54,10 @@ const resolveVendorId = (record) => {
 };
 
 export const normalizeZohoRecord = (record) => {
+  const moneyUnits = {
+    sourceUnit: config.money?.sourceUnit || 'reais',
+    dbUnit: config.money?.dbUnit || 'centavos'
+  };
   const rawContractId = getField(record, config.zohoFields.contractId) || record.ID || record.id;
   const cpfCnpj = normalizeCpfCnpj(getField(record, config.zohoFields.cpfCnpj));
   const seguradoNome = getField(record, config.zohoFields.seguradoNome) || record.segurado_nome || '';
@@ -66,8 +70,10 @@ export const normalizeZohoRecord = (record) => {
   const termino = toDateOnly(getField(record, config.zohoFields.termino));
   const addedTime = toDateTime(getField(record, config.zohoFields.addedTime));
   const modifiedTime = toDateTime(getField(record, config.zohoFields.modifiedTime));
-  const premio = normalizeMoney(getField(record, config.zohoFields.premio));
-  const comissaoValor = normalizeMoney(getField(record, config.zohoFields.comissaoValor));
+  const premioRaw = normalizeMoney(getField(record, config.zohoFields.premio));
+  const comissaoValorRaw = normalizeMoney(getField(record, config.zohoFields.comissaoValor));
+  const premio = normalizeMoneyToDb(premioRaw, moneyUnits);
+  const comissaoValor = normalizeMoneyToDb(comissaoValorRaw, moneyUnits);
   const comissaoPctRaw = normalizeMoney(getField(record, config.zohoFields.comissaoPct));
   const comissaoPct = comissaoPctRaw !== null && comissaoPctRaw > 1 ? comissaoPctRaw / 100 : comissaoPctRaw;
 
@@ -88,8 +94,8 @@ export const normalizeZohoRecord = (record) => {
     seguradora || '',
     inicioISO || '',
     terminoISO || '',
-    premio ?? '',
-    comissaoValor ?? ''
+    premioRaw ?? '',
+    comissaoValorRaw ?? ''
   ].join('|');
 
   const rowHash = sha256(rowHashSource);
@@ -101,7 +107,7 @@ export const normalizeZohoRecord = (record) => {
   const statusNormalized = String(statusRaw || 'vigente').trim().toLowerCase();
 
   const comissaoPctValue =
-    comissaoPct ?? (premio && comissaoValor ? comissaoValor / premio : null);
+    comissaoPct ?? (premioRaw && comissaoValorRaw ? comissaoValorRaw / premioRaw : null);
 
   const qualityFlags = [];
   const cpfValid = cpfCnpj ? isValidCpfCnpj(cpfCnpj) : false;
