@@ -21,9 +21,26 @@ import {
   triggerIngestion
 } from './services/zohoService';
 import { CrossSellSummary, DashboardSnapshot, RenewalListItem, StatusResponse } from './types';
-import { DataQualityExceptionItem, DataQualityResponse, SnapshotStatusResponse } from './src/types/ops';
+import {
+  DataQualityExceptionItem,
+  DataQualityResponse,
+  QualityStatus,
+  SnapshotStatusResponse
+} from './src/types/ops';
 import { formatCurrencyBRL } from './utils/format';
 import { Terminal, ShieldCheck } from 'lucide-react';
+
+const qualityLabelMap: Record<QualityStatus, string> = {
+  ok: 'Qualidade OK',
+  attention: 'Qualidade em atenção',
+  critical: 'Qualidade crítica'
+};
+
+const exceptionActionHints: Record<string, string> = {
+  unknown_seller: 'Abra o Admin para atribuir vendedor e evitar distorções no ranking.',
+  missing_product: 'Atualize o ramo dos contratos no Admin para garantir mix confiável.',
+  missing_value: 'Informe prêmio/comissão no Admin para liberar previsões seguras.'
+};
 
 const App: React.FC = () => {
   const [loading, setLoading] = useState(true);
@@ -38,6 +55,7 @@ const App: React.FC = () => {
   const [snapshotStatus, setSnapshotStatus] = useState<SnapshotStatusResponse | null>(null);
   const [snapshotStatusLoading, setSnapshotStatusLoading] = useState(false);
   const [opsError, setOpsError] = useState('');
+  const [opsHint, setOpsHint] = useState('');
   const [syncLoading, setSyncLoading] = useState(false);
   const [exceptionsOpen, setExceptionsOpen] = useState(false);
   const [exceptionsType, setExceptionsType] = useState<string | null>(null);
@@ -179,6 +197,12 @@ const App: React.FC = () => {
     setExceptionsOpen(true);
   };
 
+  const handleExceptionAction = (type: string) => {
+    setExceptionsOpen(false);
+    setActiveTab('admin');
+    setOpsHint(exceptionActionHints[type] || 'Abra o painel Admin para corrigir esta exceção.');
+  };
+
   const loadExceptions = async (type: string, offset = 0, append = false) => {
     setExceptionsLoading(true);
     try {
@@ -205,6 +229,12 @@ const App: React.FC = () => {
     setExceptionsOffset(0);
   }, [monthRef]);
 
+  useEffect(() => {
+    if (!opsHint) return;
+    const timer = setTimeout(() => setOpsHint(''), 7000);
+    return () => clearTimeout(timer);
+  }, [opsHint]);
+
   const filterOptions = useMemo(() => {
     const vendors = data?.filters?.vendors || [];
     const ramos = data?.filters?.ramos || [];
@@ -220,18 +250,33 @@ const App: React.FC = () => {
     ? 'bg-param-warning/20 border-param-warning/60 text-param-warning'
     : 'bg-param-success/20 border-param-success/60 text-param-success';
 
-  const qualityStatus = dataQuality
-    ? dataQuality.quality_status
-    : status?.stale_data
-    ? 'critical'
-    : 'attention';
-  const qualityLabel = dataQuality
-    ? qualityStatus === 'ok'
-      ? 'Qualidade OK'
-      : qualityStatus === 'attention'
-      ? 'Qualidade em atenção'
-      : 'Qualidade crítica'
-    : 'Qualidade indisponível';
+  const qualityInfo = useMemo(() => {
+    if (dataQuality) {
+      const statusValue = dataQuality.quality_status;
+      return {
+        status: statusValue,
+        label: qualityLabelMap[statusValue],
+        reason:
+          dataQuality.quality_reason ||
+          'Qualidade validada. Acompanhe as exceções listadas.'
+      };
+    }
+    const fallbackStatus: QualityStatus = status?.stale_data ? 'critical' : 'attention';
+    const fallbackLabel = qualityLabelMap[fallbackStatus];
+    const fallbackReason = status?.stale_data
+      ? 'Middleware reportou dados desatualizados; sincronize antes de decidir.'
+      : status?.status
+      ? `Último status da ingestão: ${status.status}.`
+      : 'Qualidade indisponível; revise as conexões.';
+    return {
+      status: fallbackStatus,
+      label: fallbackLabel,
+      reason: fallbackReason
+    };
+  }, [dataQuality, status]);
+  const qualityStatus = qualityInfo.status;
+  const qualityLabel = qualityInfo.label;
+  const qualityReason = qualityInfo.reason;
   const exceptionsCount = dataQuality?.exceptions.reduce((sum, item) => sum + item.count, 0) || 0;
 
   const lastUpdateLabel = dataQuality?.freshness_minutes !== undefined && dataQuality?.freshness_minutes !== null
@@ -399,6 +444,12 @@ const App: React.FC = () => {
         </div>
       </nav>
 
+      {opsHint && (
+        <div className="mb-3 px-4 py-2 text-[10px] text-white/80 border border-param-success/40 bg-param-success/10 rounded-[10px]">
+          {opsHint}
+        </div>
+      )}
+
       {activeTab === 'ops' && (
         <>
           <CommandBar
@@ -408,6 +459,7 @@ const App: React.FC = () => {
             lastUpdateLabel={lastUpdateLabel}
             qualityLabel={qualityLabel}
             qualityStatus={qualityStatus}
+            qualityReason={qualityReason}
             exceptionsCount={exceptionsCount}
             onSync={handleSyncNow}
             onOpenExceptions={() => handleOpenExceptions()}
@@ -589,6 +641,7 @@ const App: React.FC = () => {
             }}
             searchTerm={exceptionsSearch}
             onSearchTermChange={setExceptionsSearch}
+            onActionClick={handleExceptionAction}
           />
         </>
       )}

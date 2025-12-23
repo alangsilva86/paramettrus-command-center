@@ -10,6 +10,7 @@ interface CommandBarProps {
   lastUpdateLabel: string;
   qualityLabel: string;
   qualityStatus: QualityStatus;
+  qualityReason: string;
   exceptionsCount: number;
   onSync: () => void;
   onOpenExceptions: () => void;
@@ -106,6 +107,7 @@ const CommandBar: React.FC<CommandBarProps> = ({
             </button>
           </div>
         </div>
+        <div className="mt-2 text-[10px] text-white/60">{qualityReason}</div>
       </div>
     </div>
   );

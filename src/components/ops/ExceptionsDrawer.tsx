@@ -15,6 +15,7 @@ interface ExceptionsDrawerProps {
   onLoadMore: () => void;
   searchTerm: string;
   onSearchTermChange: (value: string) => void;
+  onActionClick?: (type: string) => void;
 }
 
 const ExceptionsDrawer: React.FC<ExceptionsDrawerProps> = ({
@@ -82,7 +83,17 @@ const ExceptionsDrawer: React.FC<ExceptionsDrawerProps> = ({
                   Abrir lista
                 </button>
               </div>
-              <div className="text-[10px] text-white/50 mt-2">Ação recomendada: {item.action_label}</div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {onActionClick && (
+                  <button
+                    type="button"
+                    onClick={() => onActionClick(item.type)}
+                    className="text-[10px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-[10px] border border-param-primary text-param-primary hover:border-white"
+                  >
+                    {item.action_label}
+                  </button>
+                )}
+              </div>
             </div>
           ))}
           {summary.length === 0 && (
