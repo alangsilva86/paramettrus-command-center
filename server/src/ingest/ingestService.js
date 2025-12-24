@@ -2,12 +2,13 @@ import { query, withClient } from '../db.js';
 import { config } from '../config.js';
 import { normalizeZohoRecord } from './normalize.js';
 import { fetchZohoReport, withRetry } from './zohoClient.js';
-import { addDays, formatDate, toDateOnly } from '../utils/date.js';
+import { addDays, endOfMonth, formatDate, startOfMonth, toDateOnly } from '../utils/date.js';
 import { logError, logInfo, logSuccess, logWarn } from '../utils/logger.js';
 import {
   insertIngestionRun,
   finalizeIngestionRun,
   insertRawPayload,
+  upsertRawPayload,
   getExistingRowInfo,
   resolveTimestamp,
   isIncomingNewer,
@@ -22,6 +23,40 @@ const DEFAULT_LOOKBACK_DAYS = 7;
 
 const buildCriteria = (field, start, end) => {
   return `(${field} >= "${start}" && ${field} <= "${end}")`;
+};
+
+const monthRefToIndex = (monthRef) => {
+  const [year, month] = monthRef.split('-').map(Number);
+  return year * 12 + (month - 1);
+};
+
+const normalizeMonthRange = (startMonth, endMonth) => {
+  if (monthRefToIndex(startMonth) <= monthRefToIndex(endMonth)) {
+    return { start: startMonth, end: endMonth };
+  }
+  return { start: endMonth, end: startMonth };
+};
+
+const listMonthRefs = (startMonth, endMonth) => {
+  const startIdx = monthRefToIndex(startMonth);
+  const endIdx = monthRefToIndex(endMonth);
+  const months = [];
+  for (let idx = startIdx; idx <= endIdx; idx += 1) {
+    const year = Math.floor(idx / 12);
+    const month = String((idx % 12) + 1).padStart(2, '0');
+    months.push(`${year}-${month}`);
+  }
+  return months;
+};
+
+const buildMonthRanges = (startMonth, endMonth) => {
+  const normalized = normalizeMonthRange(startMonth, endMonth);
+  const months = listMonthRefs(normalized.start, normalized.end);
+  return months.map((monthRef) => ({
+    monthRef,
+    start: startOfMonth(monthRef),
+    end: endOfMonth(monthRef)
+  }));
 };
 
 const resolveIncrementalCriteria = async (client) => {
@@ -99,6 +134,191 @@ const refreshCustomers = async (client, cpfCnpjs) => {
       ]
     );
   }
+};
+
+export const refreshZohoPeriod = async ({
+  startMonth,
+  endMonth,
+  includeInicio = true
+}) => {
+  const normalized = normalizeMonthRange(startMonth, endMonth);
+  const ranges = buildMonthRanges(normalized.start, normalized.end);
+  const criteriaFields = [config.zohoFields.dataEfetivacao || 'contract_effective_date'];
+  if (includeInicio && config.zohoFields.inicio) {
+    if (!criteriaFields.includes(config.zohoFields.inicio)) {
+      criteriaFields.push(config.zohoFields.inicio);
+    }
+  }
+
+  logInfo('ingest', 'Refresh de periodo iniciado', {
+    start: normalized.start,
+    end: normalized.end,
+    criteria_fields: criteriaFields
+  });
+
+  return withClient(async (client) => {
+    const startedAt = new Date();
+    const runId = await insertIngestionRun(client, startedAt);
+    let fetchedCount = 0;
+    let insertedNormCount = 0;
+    let updatedNormCount = 0;
+    let duplicatesCount = 0;
+    let invalidCount = 0;
+    let incompleteCount = 0;
+    let rawInserted = 0;
+    let rawUpdated = 0;
+    let rawSkipped = 0;
+    const seenIds = new Set();
+    const fetchedAt = new Date().toISOString();
+    const touchedCpfs = [];
+
+    try {
+      for (const range of ranges) {
+        const startKey = formatDate(range.start);
+        const endKey = formatDate(range.end);
+        for (const field of criteriaFields) {
+          const criteria = buildCriteria(field, startKey, endKey);
+          logInfo('ingest', 'Refresh periodo janela', {
+            month_ref: range.monthRef,
+            field,
+            criteria
+          });
+
+          const records = await withRetry(
+            () => fetchZohoReport({ criteria }),
+            3,
+            (error) => error?.code !== 'ZOHO_AUTH_401'
+          );
+          fetchedCount += records.length;
+
+          for (const record of records) {
+            const contractId = record.ID || record.id || null;
+            if (contractId && seenIds.has(contractId)) {
+              duplicatesCount += 1;
+              continue;
+            }
+            if (contractId) seenIds.add(contractId);
+
+            const normalizedRecord = normalizeZohoRecord(record);
+            if (!normalizedRecord.month_ref) {
+              invalidCount += 1;
+              continue;
+            }
+            if (normalizedRecord.is_incomplete) incompleteCount += 1;
+            if (normalizedRecord.is_invalid) invalidCount += 1;
+
+            const rawResult = await upsertRawPayload({
+              client,
+              record,
+              fetchedAt,
+              source: SOURCE,
+              sourceContractIdOverride: normalizedRecord.is_synthetic_id ? normalizedRecord.contract_id : null
+            });
+            rawInserted += rawResult.inserted;
+            rawUpdated += rawResult.updated;
+            rawSkipped += rawResult.skipped;
+
+            const fingerprint = await getLatestByRowHash(client, normalizedRecord.row_hash);
+            if (fingerprint && fingerprint.contract_id !== normalizedRecord.contract_id) {
+              const incomingNewer = isIncomingNewer(normalizedRecord, fingerprint);
+              if (!incomingNewer) {
+                duplicatesCount += 1;
+                continue;
+              }
+            }
+
+            const existing = await getExistingRowInfo(client, normalizedRecord.contract_id);
+            const normalizedTs = resolveTimestamp(normalizedRecord);
+            const existingTs = resolveTimestamp(existing);
+            const needsModifiedUpdate =
+              normalizedTs && (!existingTs || normalizedTs > existingTs);
+            const needsVendorUpdate = existing && (!existing.vendedorId || existing.vendedorId === '');
+            if (
+              existing &&
+              existing.rowHash === normalizedRecord.row_hash &&
+              !needsVendorUpdate &&
+              !needsModifiedUpdate
+            ) {
+              duplicatesCount += 1;
+              continue;
+            }
+            if (existing) {
+              await updateNormalized(client, normalizedRecord);
+              updatedNormCount += 1;
+            } else {
+              await insertNormalized(client, normalizedRecord);
+              insertedNormCount += 1;
+            }
+
+            if (fingerprint) {
+              const removed = await purgeDuplicatesByRowHash(
+                client,
+                normalizedRecord.row_hash,
+                normalizedRecord.contract_id
+              );
+              if (removed > 0) duplicatesCount += removed;
+            }
+
+            if (normalizedRecord.cpf_cnpj) touchedCpfs.push(normalizedRecord.cpf_cnpj);
+          }
+        }
+      }
+
+      await refreshCustomers(client, touchedCpfs);
+
+      await finalizeIngestionRun(client, runId, {
+        status: 'SUCCESS',
+        finishedAt: new Date(),
+        fetchedCount,
+        insertedNormCount,
+        duplicatesCount,
+        details: {
+          mode: 'period_refresh',
+          start_month: normalized.start,
+          end_month: normalized.end,
+          criteria_fields: criteriaFields,
+          include_inicio: includeInicio,
+          updated_norm_count: updatedNormCount,
+          raw_inserted: rawInserted,
+          raw_updated: rawUpdated,
+          raw_skipped: rawSkipped,
+          invalid_count: invalidCount,
+          incomplete_count: incompleteCount
+        }
+      });
+
+      logSuccess('ingest', 'Refresh de periodo concluido', {
+        start: normalized.start,
+        end: normalized.end,
+        fetched: fetchedCount,
+        inserted: insertedNormCount,
+        updated: updatedNormCount,
+        duplicates: duplicatesCount,
+        invalid: invalidCount,
+        incomplete: incompleteCount
+      });
+
+      return {
+        runId,
+        status: 'SUCCESS',
+        fetchedCount,
+        insertedNormCount,
+        updatedNormCount,
+        duplicatesCount
+      };
+    } catch (error) {
+      logError('ingest', 'Falha no refresh de periodo', { error: error?.message });
+      await finalizeIngestionRun(client, runId, {
+        status: 'FAILED',
+        finishedAt: new Date(),
+        fetchedCount,
+        insertedNormCount,
+        duplicatesCount,
+        error: error?.message || 'Period refresh failed'
+      });
+      throw error;
+    }
+  });
 };
 
 export const runIngestion = async () => {

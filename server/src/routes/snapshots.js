@@ -12,12 +12,29 @@ import {
 import { config } from '../config.js';
 import { query } from '../db.js';
 import { getRulesVersionById, getRulesVersionForDate } from '../services/rulesService.js';
+import { refreshZohoPeriod } from '../ingest/ingestService.js';
 import { startOfMonth } from '../utils/date.js';
 import { logError, logInfo, logWarn } from '../utils/logger.js';
 
 const router = express.Router();
 
 const isValidMonth = (value) => /^\d{4}-\d{2}$/.test(value);
+const monthRefToIndex = (monthRef) => {
+  const [year, month] = monthRef.split('-').map(Number);
+  return year * 12 + (month - 1);
+};
+const normalizeMonthRange = (startMonth, endMonth) => {
+  if (monthRefToIndex(startMonth) <= monthRefToIndex(endMonth)) {
+    return { start: startMonth, end: endMonth };
+  }
+  return { start: endMonth, end: startMonth };
+};
+const countMonthsInRange = (startMonth, endMonth) => {
+  const normalized = normalizeMonthRange(startMonth, endMonth);
+  const startIdx = monthRefToIndex(normalized.start);
+  const endIdx = monthRefToIndex(normalized.end);
+  return endIdx - startIdx + 1;
+};
 const isSnapshotCompatible = (snapshot) =>
   snapshot &&
   snapshot.snapshot_version === SNAPSHOT_VERSION &&
@@ -120,6 +137,7 @@ router.get('/period', async (req, res) => {
     vendorId: req.query.vendedor_id || null,
     ramo: req.query.ramo || null
   };
+  const refresh = req.query.refresh === '1' || req.query.refresh === 'true';
 
   if (!isValidMonth(startMonth) || !isValidMonth(endMonth)) {
     logWarn('snapshot', 'Parametros de periodo invalidos', { start_month: startMonth, end_month: endMonth });
@@ -127,6 +145,18 @@ router.get('/period', async (req, res) => {
   }
 
   try {
+    if (refresh) {
+      const monthsSpan = countMonthsInRange(startMonth, endMonth);
+      if (monthsSpan > 12) {
+        return res.status(400).json({ error: 'Período máximo para refresh é de 12 meses.' });
+      }
+      const normalized = normalizeMonthRange(startMonth, endMonth);
+      await refreshZohoPeriod({
+        startMonth: normalized.start,
+        endMonth: normalized.end,
+        includeInicio: true
+      });
+    }
     const snapshot = await buildPeriodSnapshot({
       startMonth,
       endMonth,

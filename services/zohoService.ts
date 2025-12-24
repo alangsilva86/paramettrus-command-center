@@ -53,9 +53,12 @@ export const fetchDashboardSnapshot = async (
 export const fetchDashboardPeriod = async (
   startMonth: string,
   endMonth: string,
-  filters?: { vendorId?: string; ramo?: string }
+  filters?: { vendorId?: string; ramo?: string },
+  options?: { refresh?: boolean }
 ): Promise<DashboardSnapshot> => {
   const params = new URLSearchParams({ start: startMonth, end: endMonth });
+  const shouldRefresh = options?.refresh ?? true;
+  if (shouldRefresh) params.set('refresh', '1');
   if (filters?.vendorId) params.set('vendedor_id', filters.vendorId);
   if (filters?.ramo) params.set('ramo', filters.ramo);
   const response = await fetch(`${API_BASE}/api/snapshots/period?${params.toString()}`);

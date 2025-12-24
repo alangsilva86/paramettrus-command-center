@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import ZoneGame from './components/ZoneGame';
 import ZoneStrategy from './components/ZoneStrategy';
 import AdminPanel from './components/AdminPanel';
@@ -10,7 +10,6 @@ import TopKpis from './src/components/ops/TopKpis';
 import {
   fetchCrossSellSummary,
   fetchDashboardPeriod,
-  fetchDashboardSnapshot,
   fetchDataQuality,
   fetchExceptionsList,
   fetchRenewalList,
@@ -47,6 +46,9 @@ const App: React.FC = () => {
   const initialQuarter = String(Math.floor(initialDate.getUTCMonth() / 3) + 1);
 
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [refreshStage, setRefreshStage] = useState('');
+  const [refreshProgress, setRefreshProgress] = useState(0);
   const [data, setData] = useState<DashboardSnapshot | null>(null);
   const [renewalsD7, setRenewalsD7] = useState<RenewalListItem[]>([]);
   const [renewalsD15, setRenewalsD15] = useState<RenewalListItem[]>([]);
@@ -70,6 +72,7 @@ const App: React.FC = () => {
   const [reloadKey, setReloadKey] = useState(0);
   const [activeTab, setActiveTab] = useState<'ops' | 'admin'>('ops');
   const [adminFocus, setAdminFocus] = useState<'quality' | null>(null);
+  const lastRefreshKeyRef = useRef<string>('');
 
   const [periodMode, setPeriodMode] = useState<'month' | 'quarter' | 'year' | 'custom'>('month');
   const [periodMonth, setPeriodMonth] = useState(() => initialMonthRef);
@@ -159,14 +162,19 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const loadOpsData = async () => {
+      const refreshKey = `${periodRange.start}_${periodRange.end}_${reloadKey}`;
+      const shouldRefresh = refreshKey !== lastRefreshKeyRef.current;
       setLoading(true);
+      setIsRefreshing(shouldRefresh);
       setOpsError('');
       setDataQualityLoading(true);
       setSnapshotStatusLoading(true);
       setDataQuality(null);
       setSnapshotStatus(null);
       try {
-        const snapshotPromise = fetchDashboardPeriod(periodRange.start, periodRange.end, activeFilters);
+        const snapshotPromise = fetchDashboardPeriod(periodRange.start, periodRange.end, activeFilters, {
+          refresh: shouldRefresh
+        });
         const results = await Promise.allSettled([
           snapshotPromise,
           fetchRenewalList(7, activeFilters, renewalReferenceDate),
@@ -179,8 +187,11 @@ const App: React.FC = () => {
         ]);
 
         const errors: string[] = [];
-        if (results[0].status === 'fulfilled') setData(results[0].value);
-        else errors.push('Falha ao carregar o painel principal.');
+        if (results[0].status === 'fulfilled') {
+          setData(results[0].value);
+          if (shouldRefresh) lastRefreshKeyRef.current = refreshKey;
+        }
+        else errors.push(results[0].reason?.message || 'Falha ao carregar o painel principal.');
 
         if (results[1].status === 'fulfilled') setRenewalsD7(results[1].value);
         if (results[2].status === 'fulfilled') setRenewalsD15(results[2].value);
@@ -199,6 +210,7 @@ const App: React.FC = () => {
         setOpsError('Falha ao carregar o painel.');
       } finally {
         setLoading(false);
+        setIsRefreshing(false);
         setDataQualityLoading(false);
         setSnapshotStatusLoading(false);
       }
@@ -220,6 +232,30 @@ const App: React.FC = () => {
       loadStatusOnly();
     }
   }, [periodRange.start, periodRange.end, vendorFilter, ramoFilter, reloadKey, activeTab, activeMonthRef, renewalReferenceDate]);
+
+  useEffect(() => {
+    if (!isRefreshing) {
+      setRefreshStage('');
+      setRefreshProgress(0);
+      return;
+    }
+    const stages = [
+      { label: 'Conectando ao Zoho', threshold: 20 },
+      { label: 'Buscando contratos', threshold: 60 },
+      { label: 'Normalizando dados', threshold: 85 },
+      { label: 'Montando painel', threshold: 95 }
+    ];
+    let progress = 6;
+    setRefreshStage(stages[0].label);
+    setRefreshProgress(progress);
+    const timer = setInterval(() => {
+      progress = Math.min(progress + 3 + Math.random() * 5, 95);
+      setRefreshProgress(progress);
+      const stage = stages.find((item) => progress <= item.threshold) || stages[stages.length - 1];
+      setRefreshStage(stage.label);
+    }, 900);
+    return () => clearInterval(timer);
+  }, [isRefreshing]);
 
   const refreshStatus = async () => {
     const statusResponse = await fetchStatus();
@@ -656,7 +692,23 @@ const App: React.FC = () => {
                 <div className="absolute inset-0 rounded-full border-2 border-white/10"></div>
                 <div className="absolute inset-2 rounded-full border-2 border-param-primary border-t-transparent animate-spin"></div>
               </div>
-              <div className="text-param-primary font-mono text-sm animate-pulse tracking-widest">CARREGANDO PAINEL DE OPERAÇÕES...</div>
+              <div className="text-param-primary font-mono text-sm animate-pulse tracking-widest">
+                {isRefreshing ? 'ATUALIZANDO DADOS DO ZOHO...' : 'CARREGANDO PAINEL DE OPERAÇÕES...'}
+              </div>
+              {isRefreshing && (
+                <div className="w-full max-w-xs">
+                  <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+                    <div
+                      className="h-full bg-param-primary transition-all duration-500"
+                      style={{ width: `${Math.round(refreshProgress)}%` }}
+                    />
+                  </div>
+                  <div className="mt-2 flex items-center justify-between text-[10px] text-white/60 uppercase tracking-widest">
+                    <span>{refreshStage || 'Processando'}</span>
+                    <span>{Math.round(refreshProgress)}%</span>
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <main className="flex-1 flex flex-col gap-6 max-w-7xl mx-auto w-full">
