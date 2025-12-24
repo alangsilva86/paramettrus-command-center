@@ -166,9 +166,7 @@ const App: React.FC = () => {
       setDataQuality(null);
       setSnapshotStatus(null);
       try {
-        const snapshotPromise = periodRange.isRange
-          ? fetchDashboardPeriod(periodRange.start, periodRange.end, activeFilters)
-          : fetchDashboardSnapshot(periodRange.start, activeFilters);
+        const snapshotPromise = fetchDashboardPeriod(periodRange.start, periodRange.end, activeFilters);
         const results = await Promise.allSettled([
           snapshotPromise,
           fetchRenewalList(7, activeFilters, renewalReferenceDate),
