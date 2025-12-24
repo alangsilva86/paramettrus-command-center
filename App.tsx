@@ -28,8 +28,8 @@ import {
   SnapshotStatusResponse
 } from './src/types/ops';
 import { formatCurrencyBRL } from './utils/format';
-import { Terminal, ShieldCheck } from 'lucide-react';
-import { Button, Input, Select, Tabs } from './src/components/ui';
+import { Terminal, ShieldCheck, Sun, Moon } from 'lucide-react';
+import { Button, IconButton, Input, Select, Tabs } from './src/components/ui';
 
 const qualityLabelMap: Record<QualityStatus, string> = {
   ok: 'Qualidade OK',
@@ -72,11 +72,22 @@ const App: React.FC = () => {
   const [monthRef, setMonthRef] = useState(() => new Date().toISOString().slice(0, 7));
   const [vendorFilter, setVendorFilter] = useState('');
   const [ramoFilter, setRamoFilter] = useState('');
+  const [themeMode, setThemeMode] = useState<'dark' | 'light'>(() => {
+    if (typeof window === 'undefined') return 'dark';
+    return window.localStorage.getItem('param-theme') === 'light' ? 'light' : 'dark';
+  });
 
   const activeFilters = {
     vendorId: vendorFilter || undefined,
     ramo: ramoFilter || undefined
   };
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle('light', themeMode === 'light');
+    root.classList.toggle('dark', themeMode === 'dark');
+    window.localStorage.setItem('param-theme', themeMode);
+  }, [themeMode]);
 
   useEffect(() => {
     const loadOpsData = async () => {
@@ -426,6 +437,12 @@ const App: React.FC = () => {
             <div className="text-white/70 font-mono">
               Cycle: {monthRef}
             </div>
+            <IconButton
+              icon={themeMode === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              label={themeMode === 'dark' ? 'Ativar modo claro' : 'Ativar modo escuro'}
+              variant="surface"
+              onClick={() => setThemeMode((prev) => (prev === 'dark' ? 'light' : 'dark'))}
+            />
           </div>
       </header>
 

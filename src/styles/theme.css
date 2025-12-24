@@ -1,6 +1,6 @@
 /* Paramettrus Design Tokens — v1 */
 :root {
-  color-scheme: light dark;
+  color-scheme: dark;
 
   /* Brand core (guia) */
   --pm-green: 11 127 22;
@@ -8,13 +8,13 @@
   --pm-black: 18 18 18;
   --pm-white: 255 255 255;
 
-  /* Semantic tokens */
-  --pm-bg: var(--pm-white);
-  --pm-surface: 248 250 252;
-  --pm-surface-2: 241 245 249;
-  --pm-text: var(--pm-black);
-  --pm-muted: 71 85 105;
-  --pm-border: 226 232 240;
+  /* Semantic tokens (modo escuro por padrão) */
+  --pm-bg: var(--pm-black);
+  --pm-surface: 24 24 24;
+  --pm-surface-2: 32 32 32;
+  --pm-text: var(--pm-white);
+  --pm-muted: 160 174 192;
+  --pm-border: 55 65 81;
   --pm-primary: var(--pm-green);
   --pm-primary-pressed: var(--pm-green-dk);
   --pm-ring: var(--pm-green);
@@ -36,13 +36,14 @@
   --warning: 251 191 36;
 }
 
-.dark {
-  --pm-bg: var(--pm-black);
-  --pm-surface: 24 24 24;
-  --pm-surface-2: 32 32 32;
-  --pm-text: var(--pm-white);
-  --pm-muted: 160 174 192;
-  --pm-border: 55 65 81;
+.light {
+  color-scheme: light;
+  --pm-bg: var(--pm-white);
+  --pm-surface: 248 250 252;
+  --pm-surface-2: 241 245 249;
+  --pm-text: var(--pm-black);
+  --pm-muted: 71 85 105;
+  --pm-border: 226 232 240;
   --pm-primary: var(--pm-green);
   --pm-primary-pressed: var(--pm-green-dk);
   --pm-ring: var(--pm-green);
