@@ -9,20 +9,48 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        param: {
-          bg: '#0E0E11',
-          card: '#15151A',
-          border: 'rgba(255,255,255,0.08)',
-          primary: '#FF6B06',
-          accent: '#FF6B06',
-          success: '#22C55E',
-          warning: '#F59E0B',
-          danger: '#B91C1C',
-          text: 'rgba(255,255,255,0.92)'
-        }
+        background: 'var(--bg)',
+        surface: 'var(--surface)',
+        'surface-2': 'var(--surface-2)',
+        text: 'var(--text)',
+        muted: 'var(--muted)',
+        border: 'var(--border)',
+        primary: 'var(--primary)',
+        'primary-press': 'var(--primary-press)',
+        danger: 'var(--danger)',
+        success: 'var(--success)',
+        warning: 'var(--warning)'
       },
-      fontFamily: {
-        sans: ['Inter', 'Roboto', 'sans-serif']
+      spacing: {
+        px: '1px',
+        2: '8px',
+        4: '16px',
+        6: '24px',
+        8: '32px',
+        10: '40px',
+        12: '48px',
+        14: '56px',
+        16: '64px',
+        20: '80px'
+      },
+      borderRadius: {
+        sm: 'var(--radius-sm)',
+        md: 'var(--radius-md)',
+        lg: 'var(--radius-lg)'
+      },
+      boxShadow: {
+        sm: 'var(--shadow-sm)',
+        md: 'var(--shadow-md)'
+      },
+      fontSize: {
+        base: ['16px', '1.5'],
+        'title-xl': ['20px', '1.4'],
+        'title-lg': ['18px', '1.4'],
+        'title-md': ['16px', '1.4'],
+        'title-sm': ['14px', '1.4']
+      },
+      ringOffsetWidth: {
+        2: '2px'
       }
     }
   },

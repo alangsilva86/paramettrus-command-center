@@ -29,6 +29,7 @@ import {
 } from './src/types/ops';
 import { formatCurrencyBRL } from './utils/format';
 import { Terminal, ShieldCheck } from 'lucide-react';
+import { Button, Input, Select, Tabs } from './src/components/ui';
 
 const qualityLabelMap: Record<QualityStatus, string> = {
   ok: 'Qualidade OK',
@@ -67,9 +68,6 @@ const App: React.FC = () => {
   const [reloadKey, setReloadKey] = useState(0);
   const [activeTab, setActiveTab] = useState<'ops' | 'admin'>('ops');
   const [adminFocus, setAdminFocus] = useState<'quality' | null>(null);
-
-  const inputClass =
-    'bg-param-bg border border-param-border text-xs text-white px-3 py-2 h-10 rounded-[10px] focus:outline-none focus:border-param-primary focus:ring-2 focus:ring-param-primary/30 w-full';
 
   const [monthRef, setMonthRef] = useState(() => new Date().toISOString().slice(0, 7));
   const [vendorFilter, setVendorFilter] = useState('');
@@ -432,26 +430,15 @@ const App: React.FC = () => {
       </header>
 
       <nav className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <div className="inline-flex items-center bg-param-card border border-param-border rounded-xl p-1">
-          <button
-            type="button"
-            onClick={() => setActiveTab('ops')}
-            className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest rounded-[10px] transition-colors ${
-              activeTab === 'ops' ? 'bg-param-primary text-white' : 'text-white/60 hover:text-white'
-            }`}
-          >
-            Operações
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('admin')}
-            className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest rounded-[10px] transition-colors ${
-              activeTab === 'admin' ? 'bg-param-danger text-white' : 'text-white/60 hover:text-white'
-            }`}
-          >
-            Admin & Config
-          </button>
-        </div>
+        <Tabs
+          tabs={[
+            { id: 'ops', label: 'Operações' },
+            { id: 'admin', label: 'Admin & Config' }
+          ]}
+          activeId={activeTab}
+          onChange={(next) => setActiveTab(next as 'ops' | 'admin')}
+          className="flex-1 min-w-[220px]"
+        />
         <div className="text-[10px] uppercase tracking-widest text-white/60">
           {activeTab === 'ops' ? 'Foco: operação e performance' : 'Foco: controle e governança'}
         </div>
@@ -491,19 +478,17 @@ const App: React.FC = () => {
           {/* Filtros globais */}
           <section className="mb-6 mt-4">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-              <div className="bg-param-card border border-param-border p-4 rounded-xl">
-                <div className="text-[10px] uppercase tracking-widest text-white/60 mb-2">Mês</div>
-                <input
+              <div className="bg-[var(--surface)] border border-[var(--border)] p-4 rounded-xl">
+                <Input
+                  label="Mês"
                   type="month"
-                  className={inputClass}
                   value={monthRef}
                   onChange={(event) => setMonthRef(event.target.value)}
                 />
               </div>
-              <div className="bg-param-card border border-param-border p-4 rounded-xl">
-                <div className="text-[10px] uppercase tracking-widest text-white/60 mb-2">Equipe / Vendedor</div>
-                <select
-                  className={inputClass}
+              <div className="bg-[var(--surface)] border border-[var(--border)] p-4 rounded-xl">
+                <Select
+                  label="Equipe / Vendedor"
                   value={vendorFilter}
                   onChange={(event) => setVendorFilter(event.target.value)}
                 >
@@ -513,12 +498,11 @@ const App: React.FC = () => {
                       {vendor}
                     </option>
                   ))}
-                </select>
+                </Select>
               </div>
-              <div className="bg-param-card border border-param-border p-4 rounded-xl">
-                <div className="text-[10px] uppercase tracking-widest text-white/60 mb-2">Produto</div>
-                <select
-                  className={inputClass}
+              <div className="bg-[var(--surface)] border border-[var(--border)] p-4 rounded-xl">
+                <Select
+                  label="Produto"
                   value={ramoFilter}
                   onChange={(event) => setRamoFilter(event.target.value)}
                 >
@@ -528,31 +512,31 @@ const App: React.FC = () => {
                       {ramo}
                     </option>
                   ))}
-                </select>
+                </Select>
               </div>
-              <div className="bg-param-card border border-param-border p-4 rounded-xl flex flex-col justify-between">
+              <div className="bg-[var(--surface)] border border-[var(--border)] p-4 rounded-xl flex flex-col justify-between gap-3">
                 <div>
-                  <div className="text-[10px] uppercase tracking-widest text-white/60 mb-2">Escopo ativo</div>
-                  <div className="text-xs text-white/80">
+                  <div className="text-[10px] uppercase tracking-widest text-[var(--muted)] mb-2">Escopo ativo</div>
+                  <div className="text-xs text-[var(--text)]">
                     {vendorFilter || ramoFilter ? 'Filtrado' : 'Global'}
                   </div>
-                  <div className="text-[10px] text-white/60 mt-1">
+                  <div className="text-[10px] text-[var(--muted)] mt-1">
                     {vendorFilter && <span>Vendedor: {vendorFilter}</span>}
                     {!vendorFilter && ramoFilter && <span>Produto: {ramoFilter}</span>}
                   </div>
                 </div>
-                {(vendorFilter || ramoFilter) && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setVendorFilter('');
-                      setRamoFilter('');
-                    }}
-                    className="mt-2 text-[10px] font-bold uppercase tracking-widest px-3 py-2 h-10 rounded-[10px] border border-param-border text-gray-200 hover:border-param-primary"
-                  >
-                    Limpar filtros
-                  </button>
-                )}
+                <Button
+                  variant="secondary"
+                  fullWidth
+                  disabled={!vendorFilter && !ramoFilter}
+                  onClick={() => {
+                    setVendorFilter('');
+                    setRamoFilter('');
+                  }}
+                  className="uppercase tracking-[0.3em]"
+                >
+                  Limpar filtros
+                </Button>
               </div>
             </div>
           </section>
