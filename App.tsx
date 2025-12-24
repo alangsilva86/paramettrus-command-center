@@ -6,6 +6,7 @@ import CommandBar from './src/components/ops/CommandBar';
 import ExceptionsDrawer from './src/components/ops/ExceptionsDrawer';
 import DriversPanel from './src/components/ops/DriversPanel';
 import RenewalsPanel from './src/components/ops/RenewalsPanel';
+import TopKpis from './src/components/ops/TopKpis';
 import {
   fetchCrossSellSummary,
   fetchDashboardSnapshot,
@@ -493,6 +494,10 @@ const App: React.FC = () => {
                 </div>
               ) : (
                 <>
+                  <section className="flex-shrink-0">
+                    <TopKpis kpis={data.kpis} />
+                  </section>
+
                   <section id="ops-drivers" className="flex-shrink-0">
                     <DriversPanel snapshot={data} />
                   </section>

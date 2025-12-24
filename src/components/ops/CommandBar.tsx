@@ -1,7 +1,7 @@
 import React from 'react';
 import { Download, RefreshCw, ShieldAlert } from 'lucide-react';
 import { formatCurrencyBRL } from '../../../utils/format';
-import { Badge, Button } from '../ui';
+import { Badge, IconButton } from '../ui';
 import { QualityStatus } from '../../types/ops';
 
 interface CommandBarProps {
@@ -79,35 +79,38 @@ const CommandBar: React.FC<CommandBarProps> = ({
             </Badge>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="primary"
+          <div className="flex flex-wrap items-center gap-1">
+            <IconButton
+              icon={<RefreshCw className={`w-4 h-4 ${syncLoading ? 'animate-spin' : ''}`} />}
+              label={syncLoading ? 'Sincronizando' : 'Sincronizar dados'}
+              variant="ghost"
               onClick={onSync}
-              loading={syncLoading}
-              disabled={syncDisabled}
-              startIcon={<RefreshCw className="w-4 h-4" />}
-              className="uppercase tracking-[0.3em]"
-            >
-              {syncLoading ? 'Sincronizando...' : 'Sincronizar agora'}
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={onOpenExceptions}
-              disabled={exceptionsCount === 0}
-              startIcon={<ShieldAlert className="w-4 h-4" />}
-              className="uppercase tracking-[0.3em]"
-            >
-              Ver exceções ({exceptionsCount})
-            </Button>
-            <Button
+              disabled={syncLoading || syncDisabled}
+              className="p-2 text-[var(--muted)] hover:text-[var(--text)] disabled:opacity-40 disabled:cursor-not-allowed"
+            />
+            <div className="relative">
+              <IconButton
+                icon={<ShieldAlert className="w-4 h-4" />}
+                label={exceptionsCount > 0 ? `Exceções (${exceptionsCount})` : 'Sem exceções'}
+                variant="ghost"
+                onClick={onOpenExceptions}
+                disabled={exceptionsCount === 0}
+                className="p-2 text-[var(--muted)] hover:text-[var(--text)] disabled:opacity-40 disabled:cursor-not-allowed"
+              />
+              {exceptionsCount > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[18px] h-4 px-1 rounded-full bg-[var(--danger)] text-white text-[9px] font-semibold flex items-center justify-center">
+                  {exceptionsCount}
+                </span>
+              )}
+            </div>
+            <IconButton
+              icon={<Download className="w-4 h-4" />}
+              label="Exportar dados"
               variant="ghost"
               onClick={onExport}
               disabled={exportDisabled}
-              startIcon={<Download className="w-4 h-4" />}
-              className="uppercase tracking-[0.3em]"
-            >
-              Exportar
-            </Button>
+              className="p-2 text-[var(--muted)] hover:text-[var(--text)] disabled:opacity-40 disabled:cursor-not-allowed"
+            />
           </div>
         </div>
         <div className="mt-2 text-[10px] text-white/60">{qualityReason}</div>
