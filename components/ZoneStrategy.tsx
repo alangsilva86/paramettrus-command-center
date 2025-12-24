@@ -3,6 +3,7 @@ import { DashboardSnapshot, RadarProductBubble } from '../types';
 import WidgetCard from './WidgetCard';
 import { ResponsiveContainer, ScatterChart, Scatter, XAxis, YAxis, Tooltip, Cell, ZAxis, ReferenceLine } from 'recharts';
 import { formatCurrencyBRL } from '../utils/format';
+import InfoTooltip from '../src/components/ui/InfoTooltip';
 
 interface ZoneStrategyProps {
   data: DashboardSnapshot | null;
@@ -263,8 +264,13 @@ const ZoneStrategy: React.FC<ZoneStrategyProps> = ({ data, crossSell }) => {
             </div>
           </div>
           <div className="md:col-span-3">
-            <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-2">
-              Prioridade por Comissão Potencial
+            <div className="flex items-center justify-between text-[10px] uppercase tracking-widest text-gray-500 mb-2">
+              <span>Prioridade por Comissão Potencial</span>
+              <InfoTooltip
+                label=""
+                description="Clientes Auto sem Vida com maior comissão total; foco em onde há mais peso financeiro."
+                className="text-white/60"
+              />
             </div>
             <div className="space-y-2 max-h-40 overflow-y-auto pr-2 brutal-scroll">
               {(crossSell?.autoSemVida || []).slice(0, 8).map((item) => (

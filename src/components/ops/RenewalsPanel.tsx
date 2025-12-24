@@ -1,7 +1,7 @@
 import React from 'react';
 import { formatCurrencyBRL } from '../../../utils/format';
 import { RenewalListItem } from '../../../types';
-import { Card } from '../ui';
+import { Card, InfoTooltip } from '../ui';
 
 interface RenewalsPanelProps {
   renewalsD7: RenewalListItem[];
@@ -21,7 +21,7 @@ const renderItem = (item: RenewalListItem) => (
 
 const RenewalsPanel: React.FC<RenewalsPanelProps> = ({ renewalsD7, renewalsD15, renewalsD30 }) => {
   return (
-    <Card title="Renovações Críticas">
+    <Card title={<InfoTooltip label="Renovações Críticas" description="Contratos próximos do término que precisam de ação; cada coluna mostra janelas de D-7, D-15 e D-30." />}>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {[
           { label: 'D-7', tone: 'critical', data: renewalsD7 },

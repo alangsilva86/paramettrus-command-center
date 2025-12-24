@@ -1,7 +1,7 @@
 import React from 'react';
 import { DashboardSnapshot } from '../../../types';
 import { formatCurrencyBRL } from '../../../utils/format';
-import { Card } from '../ui';
+import { Card, InfoTooltip } from '../ui';
 
 interface TopKpisProps {
   kpis: DashboardSnapshot['kpis'];
@@ -25,7 +25,15 @@ const TopKpis: React.FC<TopKpisProps> = ({ kpis }) => {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-      <Card title="Comissão MTD (Realizado)" className="lg:col-span-2">
+      <Card
+        title={
+          <InfoTooltip
+            label="Comissão MTD"
+            description="Valor acumulado realizado no mês atual; o medidor mostra % da meta atingida com projeção."
+          />
+        }
+        className="lg:col-span-2"
+      >
         <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
           <div className="relative w-44 h-24 flex items-end justify-center overflow-hidden">
             <svg className="w-full h-full" viewBox="0 0 200 100">
@@ -63,7 +71,10 @@ const TopKpis: React.FC<TopKpisProps> = ({ kpis }) => {
         </div>
       </Card>
 
-      <Card title="Gap Diário">
+      <Card title={<InfoTooltip
+        label="Gap Diário"
+        description="Quanto falta (ou sobrou) para atingir a meta diária projetada; 'LIVRE' indica excedente."
+      />}>
         <div className="flex flex-col items-center justify-center h-full text-center">
           <div className="text-xs text-[var(--muted)] mb-1 uppercase tracking-[0.3em]">
             Sua meta hoje
