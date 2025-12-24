@@ -9,6 +9,7 @@ import RenewalsPanel from './src/components/ops/RenewalsPanel';
 import TopKpis from './src/components/ops/TopKpis';
 import {
   fetchCrossSellSummary,
+  fetchDashboardPeriod,
   fetchDashboardSnapshot,
   fetchDataQuality,
   fetchExceptionsList,
@@ -24,7 +25,6 @@ import {
   QualityStatus,
   SnapshotStatusResponse
 } from './src/types/ops';
-import { formatCurrencyBRL } from './utils/format';
 import { Terminal, ShieldCheck, Sun, Moon } from 'lucide-react';
 import { Button, IconButton, Input, Select, Tabs } from './src/components/ui';
 
@@ -41,6 +41,11 @@ const exceptionActionHints: Record<string, string> = {
 };
 
 const App: React.FC = () => {
+  const initialDate = new Date();
+  const initialMonthRef = initialDate.toISOString().slice(0, 7);
+  const initialYear = String(initialDate.getUTCFullYear());
+  const initialQuarter = String(Math.floor(initialDate.getUTCMonth() / 3) + 1);
+
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<DashboardSnapshot | null>(null);
   const [renewalsD7, setRenewalsD7] = useState<RenewalListItem[]>([]);
@@ -66,7 +71,12 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'ops' | 'admin'>('ops');
   const [adminFocus, setAdminFocus] = useState<'quality' | null>(null);
 
-  const [monthRef, setMonthRef] = useState(() => new Date().toISOString().slice(0, 7));
+  const [periodMode, setPeriodMode] = useState<'month' | 'quarter' | 'year' | 'custom'>('month');
+  const [periodMonth, setPeriodMonth] = useState(() => initialMonthRef);
+  const [periodYear, setPeriodYear] = useState(() => initialYear);
+  const [periodQuarter, setPeriodQuarter] = useState(() => initialQuarter);
+  const [customStart, setCustomStart] = useState(() => initialMonthRef);
+  const [customEnd, setCustomEnd] = useState(() => initialMonthRef);
   const [vendorFilter, setVendorFilter] = useState('');
   const [ramoFilter, setRamoFilter] = useState('');
   const [themeMode, setThemeMode] = useState<'dark' | 'light'>(() => {
@@ -78,6 +88,67 @@ const App: React.FC = () => {
     vendorId: vendorFilter || undefined,
     ramo: ramoFilter || undefined
   };
+
+  const periodRange = useMemo(() => {
+    const normalize = (start: string, end: string) => {
+      if (start && end && start <= end) return { start, end };
+      return { start: end, end: start };
+    };
+    const pad = (value: number) => String(value).padStart(2, '0');
+    if (periodMode === 'month') {
+      const monthValue = periodMonth || initialMonthRef;
+      return {
+        start: monthValue,
+        end: monthValue,
+        label: monthValue,
+        isRange: false
+      };
+    }
+    if (periodMode === 'quarter') {
+      const yearValue = Number(periodYear) || Number(initialYear);
+      const quarterValue = Math.min(4, Math.max(1, Number(periodQuarter) || 1));
+      const startMonth = pad((quarterValue - 1) * 3 + 1);
+      const endMonth = pad((quarterValue - 1) * 3 + 3);
+      return {
+        start: `${yearValue}-${startMonth}`,
+        end: `${yearValue}-${endMonth}`,
+        label: `Q${quarterValue} ${yearValue}`,
+        isRange: true
+      };
+    }
+    if (periodMode === 'year') {
+      const yearValue = Number(periodYear) || Number(initialYear);
+      return {
+        start: `${yearValue}-01`,
+        end: `${yearValue}-12`,
+        label: `Ano ${yearValue}`,
+        isRange: true
+      };
+    }
+    const baseMonth = periodMonth || initialMonthRef;
+    const startValue = customStart || baseMonth;
+    const endValue = customEnd || customStart || baseMonth;
+    const normalized = normalize(startValue, endValue);
+    return {
+      start: normalized.start,
+      end: normalized.end,
+      label: normalized.start === normalized.end ? normalized.start : `${normalized.start} -> ${normalized.end}`,
+      isRange: normalized.start !== normalized.end
+    };
+  }, [periodMode, periodMonth, periodYear, periodQuarter, customStart, customEnd, initialYear, initialMonthRef]);
+
+  const activeMonthRef = periodRange.end;
+  const renewalReferenceDate = useMemo(() => {
+    if (!activeMonthRef) return undefined;
+    const [year, month] = activeMonthRef.split('-').map(Number);
+    if (!year || !month) return undefined;
+    const start = new Date(Date.UTC(year, month - 1, 1));
+    const end = new Date(Date.UTC(year, month, 0));
+    const today = new Date();
+    const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+    const reference = todayUtc >= start && todayUtc <= end ? todayUtc : end;
+    return reference.toISOString().slice(0, 10);
+  }, [activeMonthRef]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -95,15 +166,18 @@ const App: React.FC = () => {
       setDataQuality(null);
       setSnapshotStatus(null);
       try {
+        const snapshotPromise = periodRange.isRange
+          ? fetchDashboardPeriod(periodRange.start, periodRange.end, activeFilters)
+          : fetchDashboardSnapshot(periodRange.start, activeFilters);
         const results = await Promise.allSettled([
-          fetchDashboardSnapshot(monthRef, activeFilters),
-          fetchRenewalList(7, activeFilters),
-          fetchRenewalList(15, activeFilters),
-          fetchRenewalList(30, activeFilters),
+          snapshotPromise,
+          fetchRenewalList(7, activeFilters, renewalReferenceDate),
+          fetchRenewalList(15, activeFilters, renewalReferenceDate),
+          fetchRenewalList(30, activeFilters, renewalReferenceDate),
           fetchCrossSellSummary(activeFilters),
           fetchStatus(),
-          fetchDataQuality(monthRef),
-          fetchSnapshotStatus(monthRef)
+          fetchDataQuality(activeMonthRef),
+          fetchSnapshotStatus(activeMonthRef)
         ]);
 
         const errors: string[] = [];
@@ -147,7 +221,7 @@ const App: React.FC = () => {
     } else {
       loadStatusOnly();
     }
-  }, [monthRef, vendorFilter, ramoFilter, reloadKey, activeTab]);
+  }, [periodRange.start, periodRange.end, vendorFilter, ramoFilter, reloadKey, activeTab, activeMonthRef, renewalReferenceDate]);
 
   const refreshStatus = async () => {
     const statusResponse = await fetchStatus();
@@ -178,8 +252,17 @@ const App: React.FC = () => {
 
   const handleExport = () => {
     if (!data) return;
+    const exportSuffix = periodRange.isRange
+      ? `${periodRange.start}_to_${periodRange.end}`
+      : activeMonthRef;
     const payload = {
-      month_ref: monthRef,
+      month_ref: activeMonthRef,
+      period: {
+        mode: periodMode,
+        start: periodRange.start,
+        end: periodRange.end,
+        label: periodRange.label
+      },
       generated_at: new Date().toISOString(),
       filters: activeFilters,
       snapshot: data,
@@ -190,7 +273,7 @@ const App: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `paramettrus_ops_${monthRef}.json`;
+    link.download = `paramettrus_ops_${exportSuffix}.json`;
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -214,7 +297,7 @@ const App: React.FC = () => {
   const loadExceptions = async (type: string, offset = 0, append = false) => {
     setExceptionsLoading(true);
     try {
-      const response = await fetchExceptionsList(monthRef, type, 20, offset);
+      const response = await fetchExceptionsList(activeMonthRef, type, 20, offset);
       setExceptionsItems((prev) => (append ? [...prev, ...response.items] : response.items));
       setExceptionsOffset(offset + response.items.length);
       setExceptionsHasMore(offset + response.items.length < response.total);
@@ -229,13 +312,13 @@ const App: React.FC = () => {
     if (!exceptionsOpen || !exceptionsType) return;
     loadExceptions(exceptionsType, 0, false);
     setExceptionsSearch('');
-  }, [exceptionsOpen, exceptionsType, monthRef]);
+  }, [exceptionsOpen, exceptionsType, activeMonthRef]);
 
   useEffect(() => {
     setExceptionsOpen(false);
     setExceptionsItems([]);
     setExceptionsOffset(0);
-  }, [monthRef]);
+  }, [activeMonthRef]);
 
   useEffect(() => {
     if (!opsHint) return;
@@ -262,6 +345,10 @@ const App: React.FC = () => {
       ramos
     };
   }, [data]);
+  const yearOptions = useMemo(() => {
+    const current = Number(initialYear);
+    return Array.from({ length: 6 }, (_, idx) => String(current - 4 + idx));
+  }, [initialYear]);
   const envLabel = (status?.environment || 'unknown').toUpperCase();
   const envBadgeClass = envLabel.includes('PROD')
     ? 'bg-param-danger/20 border-param-danger/60 text-param-danger'
@@ -355,7 +442,7 @@ const App: React.FC = () => {
               </span>
             </div>
             <div className="text-white/70 font-mono">
-              Cycle: {monthRef}
+              Cycle: {periodRange.label}
             </div>
             <IconButton
               icon={themeMode === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
@@ -404,6 +491,7 @@ const App: React.FC = () => {
             syncLoading={syncLoading}
             syncDisabled={!hasAdminToken}
             exportDisabled={!data}
+            isRange={periodRange.isRange}
           />
 
           {opsError && (
@@ -414,16 +502,88 @@ const App: React.FC = () => {
 
           {/* Filtros globais */}
           <section className="mb-6 mt-4">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-              <div className="bg-[var(--surface)] border border-[var(--border)] p-4 rounded-xl">
-                <Input
-                  label="Mês"
-                  type="month"
-                  value={monthRef}
-                  onChange={(event) => setMonthRef(event.target.value)}
+            <div className="grid grid-cols-1 lg:grid-cols-6 gap-3">
+              <div className="bg-[var(--surface)] border border-[var(--border)] p-4 rounded-xl lg:col-span-3">
+                <div className="text-[10px] uppercase tracking-widest text-[var(--muted)] mb-3">Período</div>
+                <Tabs
+                  tabs={[
+                    { id: 'month', label: 'Mês' },
+                    { id: 'quarter', label: 'Trimestre' },
+                    { id: 'year', label: 'Ano' },
+                    { id: 'custom', label: 'Personalizado' }
+                  ]}
+                  activeId={periodMode}
+                  onChange={(next) => setPeriodMode(next as 'month' | 'quarter' | 'year' | 'custom')}
                 />
+                <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {periodMode === 'month' && (
+                    <Input
+                      label="Mês"
+                      type="month"
+                      value={periodMonth}
+                      onChange={(event) => setPeriodMonth(event.target.value)}
+                    />
+                  )}
+                  {periodMode === 'quarter' && (
+                    <>
+                      <Select
+                        label="Ano"
+                        value={periodYear}
+                        onChange={(event) => setPeriodYear(event.target.value)}
+                      >
+                        {yearOptions.map((year) => (
+                          <option key={year} value={year}>
+                            {year}
+                          </option>
+                        ))}
+                      </Select>
+                      <Select
+                        label="Trimestre"
+                        value={periodQuarter}
+                        onChange={(event) => setPeriodQuarter(event.target.value)}
+                      >
+                        <option value="1">Q1</option>
+                        <option value="2">Q2</option>
+                        <option value="3">Q3</option>
+                        <option value="4">Q4</option>
+                      </Select>
+                    </>
+                  )}
+                  {periodMode === 'year' && (
+                    <Select
+                      label="Ano"
+                      value={periodYear}
+                      onChange={(event) => setPeriodYear(event.target.value)}
+                    >
+                      {yearOptions.map((year) => (
+                        <option key={year} value={year}>
+                          {year}
+                        </option>
+                      ))}
+                    </Select>
+                  )}
+                  {periodMode === 'custom' && (
+                    <>
+                      <Input
+                        label="Início"
+                        type="month"
+                        value={customStart}
+                        onChange={(event) => setCustomStart(event.target.value)}
+                      />
+                      <Input
+                        label="Fim"
+                        type="month"
+                        value={customEnd}
+                        onChange={(event) => setCustomEnd(event.target.value)}
+                      />
+                    </>
+                  )}
+                </div>
+                <div className="mt-3 text-[10px] text-[var(--muted)]">
+                  Período ativo: {periodRange.label}
+                </div>
               </div>
-              <div className="bg-[var(--surface)] border border-[var(--border)] p-4 rounded-xl">
+              <div className="bg-[var(--surface)] border border-[var(--border)] p-4 rounded-xl lg:col-span-1">
                 <Select
                   label="Equipe / Vendedor"
                   value={vendorFilter}
@@ -437,7 +597,7 @@ const App: React.FC = () => {
                   ))}
                 </Select>
               </div>
-              <div className="bg-[var(--surface)] border border-[var(--border)] p-4 rounded-xl">
+              <div className="bg-[var(--surface)] border border-[var(--border)] p-4 rounded-xl lg:col-span-1">
                 <Select
                   label="Produto"
                   value={ramoFilter}
@@ -451,7 +611,7 @@ const App: React.FC = () => {
                   ))}
                 </Select>
               </div>
-              <div className="bg-[var(--surface)] border border-[var(--border)] p-4 rounded-xl flex flex-col justify-between gap-3">
+              <div className="bg-[var(--surface)] border border-[var(--border)] p-4 rounded-xl flex flex-col justify-between gap-3 lg:col-span-1">
                 <div>
                   <div className="text-[10px] uppercase tracking-widest text-[var(--muted)] mb-2">Escopo ativo</div>
                   <div className="text-xs text-[var(--text)]">
@@ -460,6 +620,9 @@ const App: React.FC = () => {
                   <div className="text-[10px] text-[var(--muted)] mt-1">
                     {vendorFilter && <span>Vendedor: {vendorFilter}</span>}
                     {!vendorFilter && ramoFilter && <span>Produto: {ramoFilter}</span>}
+                  </div>
+                  <div className="text-[10px] text-[var(--muted)] mt-1">
+                    Período: {periodRange.label}
                   </div>
                 </div>
                 <Button
@@ -495,11 +658,11 @@ const App: React.FC = () => {
               ) : (
                 <>
                   <section className="flex-shrink-0">
-                    <TopKpis kpis={data.kpis} />
+                    <TopKpis kpis={data.kpis} isRange={periodRange.isRange} />
                   </section>
 
                   <section id="ops-drivers" className="flex-shrink-0">
-                    <DriversPanel snapshot={data} />
+                    <DriversPanel snapshot={data} isRange={periodRange.isRange} />
                   </section>
 
                   <section className="flex-shrink-0">
@@ -536,7 +699,12 @@ const App: React.FC = () => {
                   </section>
 
                   <section className="flex-grow min-h-[280px]">
-                    <ZoneGame leaderboard={filteredLeaderboard} vendorStats={filteredVendorStats} />
+                    <ZoneGame
+                      leaderboard={filteredLeaderboard}
+                      vendorStats={filteredVendorStats}
+                      defaultMetric={periodRange.isRange ? 'comissao' : 'xp'}
+                      comparisonLabel={periodRange.isRange ? 'período anterior' : 'mês anterior'}
+                    />
                   </section>
                 </>
               )}
@@ -568,7 +736,7 @@ const App: React.FC = () => {
       {activeTab === 'admin' && (
         <main className="flex-1 flex flex-col gap-6 max-w-7xl mx-auto w-full">
           <AdminPanel
-            monthRef={monthRef}
+            monthRef={activeMonthRef}
             status={status}
             onStatusRefresh={refreshStatus}
             onReloadDashboard={reloadDashboard}

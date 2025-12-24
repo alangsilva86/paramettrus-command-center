@@ -5,9 +5,10 @@ import { Card, InfoTooltip } from '../ui';
 
 interface TopKpisProps {
   kpis: DashboardSnapshot['kpis'];
+  isRange?: boolean;
 }
 
-const TopKpis: React.FC<TopKpisProps> = ({ kpis }) => {
+const TopKpis: React.FC<TopKpisProps> = ({ kpis, isRange = false }) => {
   const pct = Math.min(Math.max(kpis.pct_meta || 0, 0), 1) * 100;
   const radius = 80;
   const circumference = radius * Math.PI;
@@ -22,14 +23,21 @@ const TopKpis: React.FC<TopKpisProps> = ({ kpis }) => {
     : 'text-warning';
 
   const gaugeColor = pct >= 90 ? 'var(--primary)' : pct >= 70 ? 'rgb(var(--warning))' : 'rgb(var(--danger))';
+  const commissionLabel = isRange ? 'Comissão no período' : 'Comissão MTD';
+  const commissionDescription = isRange
+    ? 'Valor acumulado no período selecionado; o medidor mostra % da meta total.'
+    : 'Valor acumulado realizado no mês atual; o medidor mostra % da meta atingida com projeção.';
+  const gapDescription = isRange
+    ? 'Ritmo diário considerando o mês final do período selecionado.'
+    : "Quanto falta (ou sobrou) para atingir a meta diária projetada; 'LIVRE' indica excedente.";
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
       <Card
         title={
           <InfoTooltip
-            label="Comissão MTD"
-            description="Valor acumulado realizado no mês atual; o medidor mostra % da meta atingida com projeção."
+            label={commissionLabel}
+            description={commissionDescription}
           />
         }
         className="lg:col-span-2"
@@ -73,7 +81,7 @@ const TopKpis: React.FC<TopKpisProps> = ({ kpis }) => {
 
       <Card title={<InfoTooltip
         label="Gap Diário"
-        description="Quanto falta (ou sobrou) para atingir a meta diária projetada; 'LIVRE' indica excedente."
+        description={gapDescription}
       />}>
         <div className="flex flex-col items-center justify-center h-full text-center">
           <div className="text-xs text-[var(--muted)] mb-1 uppercase tracking-[0.3em]">

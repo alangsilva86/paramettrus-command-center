@@ -8,9 +8,15 @@ router.get('/list', async (req, res) => {
   const windowDays = Number(req.query.window || 15);
   const vendorId = req.query.vendedor_id || null;
   const ramo = req.query.ramo || null;
+  const referenceDate = req.query.reference_date || req.query.reference;
   try {
-    logInfo('renewal', 'Requisicao lista renovacoes', { window_days: windowDays, vendor_id: vendorId, ramo });
-    const list = await listRenewals({ windowDays, vendorId, ramo });
+    logInfo('renewal', 'Requisicao lista renovacoes', {
+      window_days: windowDays,
+      vendor_id: vendorId,
+      ramo,
+      reference_date: referenceDate
+    });
+    const list = await listRenewals({ windowDays, vendorId, ramo, referenceDate });
     logInfo('renewal', 'Lista renovacoes pronta', { items: list.length });
     res.json({ window_days: windowDays, items: list });
   } catch (error) {

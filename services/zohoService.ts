@@ -50,6 +50,21 @@ export const fetchDashboardSnapshot = async (
   return response.json();
 };
 
+export const fetchDashboardPeriod = async (
+  startMonth: string,
+  endMonth: string,
+  filters?: { vendorId?: string; ramo?: string }
+): Promise<DashboardSnapshot> => {
+  const params = new URLSearchParams({ start: startMonth, end: endMonth });
+  if (filters?.vendorId) params.set('vendedor_id', filters.vendorId);
+  if (filters?.ramo) params.set('ramo', filters.ramo);
+  const response = await fetch(`${API_BASE}/api/snapshots/period?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, 'Falha ao carregar período'));
+  }
+  return response.json();
+};
+
 export const fetchScenarioSnapshot = async (
   monthRef: string,
   scenarioId: string,
@@ -70,11 +85,13 @@ export const fetchScenarioSnapshot = async (
 
 export const fetchRenewalList = async (
   windowDays: number,
-  filters?: { vendorId?: string; ramo?: string }
+  filters?: { vendorId?: string; ramo?: string },
+  referenceDate?: string
 ): Promise<RenewalListItem[]> => {
   const params = new URLSearchParams({ window: String(windowDays) });
   if (filters?.vendorId) params.set('vendedor_id', filters.vendorId);
   if (filters?.ramo) params.set('ramo', filters.ramo);
+  if (referenceDate) params.set('reference_date', referenceDate);
   const response = await fetch(`${API_BASE}/api/renewals/list?${params.toString()}`);
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response, 'Falha ao carregar renovações'));

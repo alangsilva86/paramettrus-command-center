@@ -259,8 +259,13 @@ export const getVendorPenaltyMap = async (monthRef) => {
   return map;
 };
 
-export const listRenewals = async ({ windowDays = 15, vendorId = null, ramo = null } = {}) => {
-  const metrics = await getRenewalMetrics({ vendorId, ramo });
+export const listRenewals = async ({
+  windowDays = 15,
+  vendorId = null,
+  ramo = null,
+  referenceDate
+} = {}) => {
+  const metrics = await getRenewalMetrics({ referenceDate, vendorId, ramo });
   if (windowDays <= 5) return metrics.d5;
   if (windowDays <= 7) return metrics.d7;
   if (windowDays <= 15) return metrics.d15;

@@ -7,12 +7,23 @@ import { formatCurrencyBRL } from '../utils/format';
 interface ZoneGameProps {
   leaderboard: LeaderboardEntry[];
   vendorStats: VendorStat[];
+  defaultMetric?: 'xp' | 'comissao' | 'growth';
+  comparisonLabel?: string;
 }
 
-const ZoneGame: React.FC<ZoneGameProps> = ({ leaderboard, vendorStats }) => {
-  const [metric, setMetric] = useState<'xp' | 'comissao' | 'growth'>('xp');
+const ZoneGame: React.FC<ZoneGameProps> = ({
+  leaderboard,
+  vendorStats,
+  defaultMetric = 'xp',
+  comparisonLabel = 'mês anterior'
+}) => {
+  const [metric, setMetric] = useState<'xp' | 'comissao' | 'growth'>(defaultMetric);
   const [activeVendor, setActiveVendor] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
+
+  useEffect(() => {
+    setMetric(defaultMetric);
+  }, [defaultMetric]);
 
   const badgesMap = useMemo(() => {
     return new Map(leaderboard.map((row) => [row.vendedor_id, row.badges || []]));
@@ -205,11 +216,11 @@ const ZoneGame: React.FC<ZoneGameProps> = ({ leaderboard, vendorStats }) => {
               <div className="text-[10px] uppercase tracking-widest text-gray-500">Vendedor</div>
               <div className="text-xl font-bold text-white">{activeStats.vendedor_id}</div>
               <div className={`text-[10px] ${activeStats.growth_mom_pct >= 0 ? 'text-param-success' : 'text-param-danger'}`}>
-                Crescimento MoM {(activeStats.growth_mom_pct * 100).toFixed(1)}%
+                Crescimento vs {comparisonLabel} {(activeStats.growth_mom_pct * 100).toFixed(1)}%
               </div>
             </div>
             <div className="border-t border-param-border pt-3">
-              <div className="text-[10px] uppercase tracking-widest text-gray-500">Gap vs Mês Anterior</div>
+              <div className="text-[10px] uppercase tracking-widest text-gray-500">Gap vs {comparisonLabel}</div>
               <div className="text-lg font-bold text-param-primary">
                 {formatCurrencyBRL(activeStats.gap_comissao)}
               </div>

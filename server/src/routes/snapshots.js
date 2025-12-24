@@ -1,6 +1,7 @@
 import express from 'express';
 import {
   buildMonthlySnapshot,
+  buildPeriodSnapshot,
   compareSnapshots,
   getSnapshotCached,
   getLatestSnapshotRulesVersionId,
@@ -106,6 +107,36 @@ router.get('/month', async (req, res) => {
   } catch (error) {
     logError('snapshot', 'Falha ao montar snapshot', {
       month_ref: monthRef,
+      error: error.message
+    });
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/period', async (req, res) => {
+  const startMonth = req.query.start;
+  const endMonth = req.query.end;
+  const filters = {
+    vendorId: req.query.vendedor_id || null,
+    ramo: req.query.ramo || null
+  };
+
+  if (!isValidMonth(startMonth) || !isValidMonth(endMonth)) {
+    logWarn('snapshot', 'Parametros de periodo invalidos', { start_month: startMonth, end_month: endMonth });
+    return res.status(400).json({ error: 'start/end inválidos (YYYY-MM)' });
+  }
+
+  try {
+    const snapshot = await buildPeriodSnapshot({
+      startMonth,
+      endMonth,
+      filters
+    });
+    return res.json(snapshot);
+  } catch (error) {
+    logError('snapshot', 'Falha ao montar snapshot de periodo', {
+      start_month: startMonth,
+      end_month: endMonth,
       error: error.message
     });
     return res.status(500).json({ error: error.message });

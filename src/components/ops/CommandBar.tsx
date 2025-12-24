@@ -19,6 +19,7 @@ interface CommandBarProps {
   syncLoading: boolean;
   syncDisabled?: boolean;
   exportDisabled?: boolean;
+  isRange?: boolean;
 }
 
 const qualityToneMap: Record<QualityStatus, 'success' | 'warning' | 'critical'> = {
@@ -49,23 +50,27 @@ const CommandBar: React.FC<CommandBarProps> = ({
   onExport,
   syncLoading,
   syncDisabled,
-  exportDisabled
+  exportDisabled,
+  isRange = false
 }) => {
+  const metaLabel = isRange ? 'Meta do período' : 'Meta do mês';
+  const realizedLabel = isRange ? 'Realizado no período' : 'Realizado MTD';
+  const paceTitle = isRange ? 'Pace do período' : 'Pace';
   return (
     <div className="sticky top-4 z-40">
       <div className="rounded-2xl border border-param-border bg-param-card/90 backdrop-blur px-4 py-3 shadow-[0_10px_24px_rgba(0,0,0,0.35)]">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-wrap items-center gap-4">
             <div>
-              <div className="text-[10px] uppercase tracking-widest text-white/50">Meta do mês</div>
+              <div className="text-[10px] uppercase tracking-widest text-white/50">{metaLabel}</div>
               <div className="text-lg font-bold text-white">{formatCurrencyBRL(meta)}</div>
             </div>
             <div>
-              <div className="text-[10px] uppercase tracking-widest text-white/50">Realizado MTD</div>
+              <div className="text-[10px] uppercase tracking-widest text-white/50">{realizedLabel}</div>
               <div className="text-lg font-bold text-white">{formatCurrencyBRL(realized)}</div>
             </div>
             <div>
-              <div className="text-[10px] uppercase tracking-widest text-white/50">Pace</div>
+              <div className="text-[10px] uppercase tracking-widest text-white/50">{paceTitle}</div>
               <div className={`text-sm font-bold ${pacePct >= 0 ? 'text-param-success' : 'text-param-danger'}`}>
                 {paceLabel(pacePct)}
               </div>
