@@ -6,27 +6,52 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const buildTokenUrl = () => `https://${config.zoho.accountsDomain}/oauth/v2/token`;
 
-export const getZohoAccessToken = async () => {
-  logInfo('zoho', 'Pedindo token ao Zoho OAuth');
-  const params = {
-    grant_type: 'refresh_token',
-    client_id: config.zoho.clientId,
-    client_secret: config.zoho.clientSecret,
-    refresh_token: config.zoho.refreshToken
-  };
-  try {
-    const response = await axios.post(buildTokenUrl(), null, { params });
-    logSuccess('zoho', 'Token recebido com sucesso');
+let tokenCache = null;
+let tokenPromise = null;
+
+export const getZohoAccessToken = async ({ force = false } = {}) => {
+  const now = Date.now();
+  if (!force && tokenCache && tokenCache.expiresAt && tokenCache.expiresAt > now + 60_000) {
     return {
-      accessToken: response.data.access_token,
-      apiDomain: response.data.api_domain || null
+      accessToken: tokenCache.accessToken,
+      apiDomain: tokenCache.apiDomain || null
     };
-  } catch (error) {
-    const status = error?.response?.status;
-    const detail = error?.response?.data?.error_description || error?.message;
-    logError('zoho', 'Falha ao obter token', { status, detail });
-    throw error;
   }
+  if (!force && tokenPromise) {
+    return tokenPromise;
+  }
+  tokenPromise = (async () => {
+    logInfo('zoho', 'Pedindo token ao Zoho OAuth');
+    const params = {
+      grant_type: 'refresh_token',
+      client_id: config.zoho.clientId,
+      client_secret: config.zoho.clientSecret,
+      refresh_token: config.zoho.refreshToken
+    };
+    try {
+      const response = await axios.post(buildTokenUrl(), null, { params });
+      const expiresIn = Number(response.data?.expires_in || 0);
+      const expiresAt = expiresIn > 0 ? now + expiresIn * 1000 : now + 55 * 60 * 1000;
+      tokenCache = {
+        accessToken: response.data.access_token,
+        apiDomain: response.data.api_domain || null,
+        expiresAt
+      };
+      logSuccess('zoho', 'Token recebido com sucesso');
+      return {
+        accessToken: tokenCache.accessToken,
+        apiDomain: tokenCache.apiDomain
+      };
+    } catch (error) {
+      const status = error?.response?.status;
+      const detail = error?.response?.data?.error_description || error?.message;
+      logError('zoho', 'Falha ao obter token', { status, detail });
+      throw error;
+    } finally {
+      tokenPromise = null;
+    }
+  })();
+  return tokenPromise;
 };
 
 const requestZohoPage = async ({ accessToken, baseUrl, offset, limit, criteria }) => {
@@ -45,7 +70,23 @@ const requestZohoPage = async ({ accessToken, baseUrl, offset, limit, criteria }
     });
   } catch (error) {
     const status = error?.response?.status;
-    const detail = error?.response?.data?.message || error?.message;
+    const detail =
+      error?.response?.data?.message ||
+      error?.response?.data?.description ||
+      error?.message;
+    const noRecords =
+      status === 400 &&
+      typeof detail === 'string' &&
+      detail.toLowerCase().includes('no records found');
+    if (noRecords) {
+      logInfo('zoho', 'Nenhum registro para criteria', { offset, criteria });
+      return {
+        data: {
+          code: 3000,
+          data: []
+        }
+      };
+    }
     if (status === 401) {
       const authError = new Error('Zoho report unauthorized');
       authError.code = 'ZOHO_AUTH_401';
@@ -106,7 +147,7 @@ export const fetchZohoReport = async ({ limit, maxPages = Infinity, criteria = n
         if (!refreshed) {
           refreshed = true;
           logWarn('zoho', '401 no report. Reautenticando e tentando novamente', { offset });
-          tokenResult = await getZohoAccessToken();
+          tokenResult = await getZohoAccessToken({ force: true });
           accessToken = tokenResult.accessToken;
           baseDomain = tokenResult.apiDomain || config.zoho.apiDomain;
           base = `${baseDomain}/creator/v2.1/data`;
