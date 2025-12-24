@@ -3,10 +3,6 @@ import ZoneGame from './components/ZoneGame';
 import ZoneStrategy from './components/ZoneStrategy';
 import AdminPanel from './components/AdminPanel';
 import CommandBar from './src/components/ops/CommandBar';
-import DecisionRow from './src/components/ops/DecisionRow';
-import type { AlertItem } from './src/components/ops/AlertCenter';
-import DataHealthCard from './src/components/ops/DataHealthCard';
-import MonthStatusBadge from './src/components/ops/MonthStatusBadge';
 import ExceptionsDrawer from './src/components/ops/ExceptionsDrawer';
 import DriversPanel from './src/components/ops/DriversPanel';
 import RenewalsPanel from './src/components/ops/RenewalsPanel';
@@ -329,83 +325,6 @@ const App: React.FC = () => {
     return list.filter((item) => item.vendedor_id && item.vendedor_id.toLowerCase() !== 'unknown');
   }, [data]);
 
-  const alertItems = useMemo<AlertItem[]>(() => {
-    const items: AlertItem[] = [];
-    if (status?.stale_data) {
-      items.push({
-        id: 'stale_data',
-        severity: 'critical' as const,
-        title: 'Dados desatualizados',
-        description: 'Atualize a ingestão para evitar decisões com informação defasada.',
-        actionLabel: 'Sincronizar agora',
-        onAction: handleSyncNow
-      });
-    }
-    const unknownException = dataQuality?.exceptions.find((item) => item.type === 'unknown_seller');
-    if (unknownException && unknownException.count > 0) {
-      items.push({
-        id: 'unknown_seller',
-        severity: 'critical' as const,
-        title: 'Contratos sem vendedor',
-        description: `${unknownException.count} contratos distorcem o ranking de performance.`,
-        impactLabel: `Impacto ${formatCurrencyBRL(unknownException.impact)}`,
-        actionLabel: 'Corrigir agora',
-        onAction: () => handleOpenExceptions('unknown_seller')
-      });
-    }
-    if (data?.renewals?.d7?.count > 0) {
-      items.push({
-        id: 'renewals_d7',
-        severity: 'critical' as const,
-        title: 'Renovações D-7 em risco',
-        description: `${data.renewals.d7.count} contas precisam de ação imediata.`,
-        impactLabel: `Impacto ${formatCurrencyBRL(data.renewals.d7.comissao_risco)}`,
-        actionLabel: 'Ver lista',
-        onAction: () => {
-          const element = document.getElementById('ops-renewals');
-          element?.scrollIntoView({ behavior: 'smooth' });
-        }
-      });
-    }
-    const missingValue = dataQuality?.exceptions.find((item) => item.type === 'missing_value');
-    if (missingValue && missingValue.count > 0) {
-      items.push({
-        id: 'missing_value',
-        severity: 'attention' as const,
-        title: 'Contratos sem valor',
-        description: `${missingValue.count} registros sem prêmio/comissão.`,
-        actionLabel: 'Revisar',
-        onAction: () => handleOpenExceptions('missing_value')
-      });
-    }
-    const missingProduct = dataQuality?.exceptions.find((item) => item.type === 'missing_product');
-    if (missingProduct && missingProduct.count > 0) {
-      items.push({
-        id: 'missing_product',
-        severity: 'attention' as const,
-        title: 'Contratos sem produto',
-        description: `${missingProduct.count} registros sem ramo informado.`,
-        actionLabel: 'Corrigir',
-        onAction: () => handleOpenExceptions('missing_product')
-      });
-    }
-
-    if (items.length === 0 && data) {
-      items.push({
-        id: 'pace_check',
-        severity: 'info' as const,
-        title: 'Ritmo sob controle',
-        description: data.kpis.forecast_pct_meta >= 1 ? 'Mês projetado acima da meta.' : 'Acompanhe o ritmo diário.',
-        actionLabel: 'Ver drivers',
-        onAction: () => {
-          const element = document.getElementById('ops-drivers');
-          element?.scrollIntoView({ behavior: 'smooth' });
-        }
-      });
-    }
-    return items.slice(0, 3);
-  }, [data, dataQuality, status, handleSyncNow, handleOpenExceptions]);
-
   return (
     <div className="min-h-screen bg-param-bg text-param-text font-sans p-4 md:p-6 lg:p-8 overflow-x-hidden flex flex-col">
       {/* Header */}
@@ -574,27 +493,19 @@ const App: React.FC = () => {
                 </div>
               ) : (
                 <>
-                  <section className="flex-shrink-0">
-                    <DecisionRow
-                      meta={metaValue}
-                      realized={realizedValue}
-                      forecast={forecastValue}
-                      forecastPct={forecastPct}
-                      gapDiario={gapDiario}
-                      gapTotal={gapTotal}
-                      diasRestantes={diasRestantes}
-                      staleForecast={staleForecast}
-                      alertItems={alertItems}
-                    />
-                  </section>
-
-                  <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    <DataHealthCard data={dataQuality} loading={dataQualityLoading} onOpenExceptions={handleOpenExceptions} />
-                    <MonthStatusBadge data={snapshotStatus} loading={snapshotStatusLoading} />
-                  </section>
-
                   <section id="ops-drivers" className="flex-shrink-0">
                     <DriversPanel snapshot={data} />
+                  </section>
+
+                  <section className="flex-shrink-0">
+                    <details className="group rounded-xl border border-param-border bg-param-card p-4" open>
+                      <summary className="cursor-pointer text-[11px] uppercase tracking-widest text-white/60 group-open:text-white">
+                        Estratégia (Mix, Matriz, Cross-sell)
+                      </summary>
+                      <div className="mt-4">
+                        <ZoneStrategy data={data} crossSell={crossSell} />
+                      </div>
+                    </details>
                   </section>
 
                   <section className="flex-shrink-0">
@@ -621,17 +532,6 @@ const App: React.FC = () => {
 
                   <section className="flex-grow min-h-[280px]">
                     <ZoneGame leaderboard={filteredLeaderboard} vendorStats={filteredVendorStats} />
-                  </section>
-
-                  <section className="flex-shrink-0">
-                    <details className="group rounded-xl border border-param-border bg-param-card p-4">
-                      <summary className="cursor-pointer text-[11px] uppercase tracking-widest text-white/60 group-open:text-white">
-                        Estratégia (Mix, Matriz, Cross-sell)
-                      </summary>
-                      <div className="mt-4">
-                        <ZoneStrategy data={data} crossSell={crossSell} />
-                      </div>
-                    </details>
                   </section>
                 </>
               )}
