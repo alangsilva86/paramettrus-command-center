@@ -1,5 +1,5 @@
 import React from 'react';
-import WidgetCard from '../../../components/WidgetCard';
+import { Badge, Button, Card } from '../ui';
 import { DataQualityResponse } from '../../types/ops';
 
 interface DataHealthCardProps {
@@ -7,12 +7,6 @@ interface DataHealthCardProps {
   loading: boolean;
   onOpenExceptions: () => void;
 }
-
-const statusTone = (status: DataQualityResponse['quality_status']) => {
-  if (status === 'ok') return 'text-param-success';
-  if (status === 'attention') return 'text-param-warning';
-  return 'text-param-danger';
-};
 
 const formatFreshness = (minutes: number | null) => {
   if (minutes === null) return 'Sem atualização';
@@ -25,51 +19,57 @@ const formatFreshness = (minutes: number | null) => {
 const DataHealthCard: React.FC<DataHealthCardProps> = ({ data, loading, onOpenExceptions }) => {
   if (loading) {
     return (
-      <WidgetCard title="Saúde dos Dados">
-        <div className="text-xs text-gray-600 italic">Carregando qualidade...</div>
-      </WidgetCard>
+      <Card title="Saúde dos Dados">
+        <p className="text-xs text-[var(--muted)] italic">Carregando qualidade...</p>
+      </Card>
     );
   }
 
   if (!data) {
     return (
-      <WidgetCard title="Saúde dos Dados">
-        <div className="text-xs text-gray-600 italic">Qualidade indisponível no momento.</div>
-      </WidgetCard>
+      <Card title="Saúde dos Dados">
+        <p className="text-xs text-[var(--muted)] italic">Qualidade indisponível no momento.</p>
+      </Card>
     );
   }
 
   const totalExceptions = data.exceptions.reduce((sum, item) => sum + item.count, 0);
+  const qualityLabel = data.quality_status === 'ok' ? 'OK' : data.quality_status === 'attention' ? 'Atenção' : 'Crítico';
+  const qualityTone = data.quality_status === 'ok' ? 'success' : data.quality_status === 'attention' ? 'warning' : 'critical';
 
   return (
-    <WidgetCard title="Saúde dos Dados">
-      <div className="flex flex-col gap-3 text-xs text-gray-300">
-        <div className="flex items-center justify-between">
-          <span className="text-gray-500">Freshness</span>
-          <span className="text-white/80">{formatFreshness(data.freshness_minutes)}</span>
-        </div>
-        <div className="flex items-center justify-between">
-          <span className="text-gray-500">Cobertura</span>
-          <span className="text-white/80">{Math.round(data.coverage_pct * 100)}% válidos</span>
-        </div>
-        <div className="flex items-center justify-between">
-          <span className="text-gray-500">Exceções críticas</span>
-          <span className="text-white/80">{totalExceptions}</span>
-        </div>
-        <div className={`text-[10px] uppercase tracking-widest ${statusTone(data.quality_status)}`}>
-          {data.quality_status === 'ok' ? 'OK' : data.quality_status === 'attention' ? 'Atenção' : 'Crítico'}
-        </div>
-        <div className="text-[10px] text-white/50">{data.quality_reason}</div>
-        <button
-          type="button"
+    <Card
+      title="Saúde dos Dados"
+      actions={
+        <Button
+          variant="ghost"
           onClick={onOpenExceptions}
           disabled={totalExceptions === 0}
-          className="text-[10px] font-bold uppercase tracking-widest text-param-primary hover:text-white disabled:text-white/30"
+          className="uppercase tracking-[0.3em] text-[10px]"
         >
-          {totalExceptions > 0 ? 'Ver e corrigir exceções' : 'Sem exceções críticas'}
-        </button>
+          {totalExceptions > 0 ? 'Ver exceções' : 'Sem exceções críticas'}
+        </Button>
+      }
+    >
+      <div className="flex flex-col gap-3 text-sm">
+        <div className="flex items-center justify-between text-[12px] text-[var(--muted)]">
+          <span>Freshness</span>
+          <span className="text-[var(--text)]">{formatFreshness(data.freshness_minutes)}</span>
+        </div>
+        <div className="flex items-center justify-between text-[12px] text-[var(--muted)]">
+          <span>Cobertura</span>
+          <span className="text-[var(--text)]">{Math.round(data.coverage_pct * 100)}% válidos</span>
+        </div>
+        <div className="flex items-center justify-between text-[12px] text-[var(--muted)]">
+          <span>Exceções críticas</span>
+          <span className="text-[var(--text)] font-semibold">{totalExceptions}</span>
+        </div>
+        <div className="flex items-center justify-between">
+          <Badge tone={qualityTone} label={qualityLabel} />
+          <span className="text-[12px] text-[var(--muted)]">{data.quality_reason}</span>
+        </div>
       </div>
-    </WidgetCard>
+    </Card>
   );
 };
 

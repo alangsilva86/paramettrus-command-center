@@ -1,5 +1,6 @@
 import React from 'react';
-import { AlertTriangle, ArrowRightCircle } from 'lucide-react';
+import { ArrowRightCircle } from 'lucide-react';
+import { Button, Card, Badge } from '../ui';
 
 export interface AlertItem {
   id: string;
@@ -15,45 +16,53 @@ interface AlertCenterProps {
   items: AlertItem[];
 }
 
-const severityStyles: Record<AlertItem['severity'], string> = {
-  critical: 'border-param-danger/60 bg-param-danger/10 text-param-danger',
-  attention: 'border-param-warning/60 bg-param-warning/10 text-param-warning',
-  info: 'border-param-border bg-param-card text-white/70'
+const toneMap: Record<AlertItem['severity'], 'critical' | 'warning' | 'muted'> = {
+  critical: 'critical',
+  attention: 'warning',
+  info: 'muted'
 };
 
 const AlertCenter: React.FC<AlertCenterProps> = ({ items }) => {
   const visibleItems = items.slice(0, 3);
 
+  if (visibleItems.length === 0) {
+    return (
+      <Card title="Ações recomendadas">
+        <p className="text-xs text-[var(--muted)] italic">Nenhuma ação crítica no momento.</p>
+      </Card>
+    );
+  }
+
   return (
-    <div className="flex flex-col gap-3 text-xs text-gray-300">
-      {visibleItems.length === 0 && (
-        <div className="text-gray-600 italic">Nenhuma ação crítica no momento.</div>
-      )}
+    <div className="flex flex-col gap-3">
       {visibleItems.map((item) => (
-        <div key={item.id} className={`border rounded-xl p-3 ${severityStyles[item.severity]}`}>
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              <div className="text-xs font-bold text-white flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4" />
-                {item.title}
-              </div>
-              <div className="text-[10px] text-white/60 mt-1">{item.description}</div>
+        <Card
+          key={item.id}
+          title={item.title}
+          className="bg-[var(--surface-2)]"
+          actions={
+            item.actionLabel && item.onAction ? (
+              <Button
+                variant="ghost"
+                onClick={item.onAction}
+                className="uppercase tracking-[0.3em] text-[10px]"
+              >
+                {item.actionLabel}
+                <ArrowRightCircle className="w-4 h-4" />
+              </Button>
+            ) : null
+          }
+        >
+          <div className="flex flex-col gap-2 text-[12px]">
+            <div className="flex items-center justify-between">
+              <Badge tone={toneMap[item.severity]} label={item.severity.toUpperCase()} />
+              {item.impactLabel && (
+                <span className="text-[10px] font-semibold text-[var(--muted)]">{item.impactLabel}</span>
+              )}
             </div>
-            {item.impactLabel && (
-              <div className="text-[10px] font-bold text-white">{item.impactLabel}</div>
-            )}
+            <p className="text-sm text-[var(--text)]">{item.description}</p>
           </div>
-          {item.actionLabel && item.onAction && (
-            <button
-              type="button"
-              onClick={item.onAction}
-              className="mt-2 inline-flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-white/80 hover:text-white"
-            >
-              {item.actionLabel}
-              <ArrowRightCircle className="w-3 h-3" />
-            </button>
-          )}
-        </div>
+        </Card>
       ))}
     </div>
   );

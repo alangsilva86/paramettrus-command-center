@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { X } from 'lucide-react';
 import { DataQualityExceptionItem, DataQualityExceptionSummary } from '../../types/ops';
 import { formatCurrencyBRL } from '../../../utils/format';
+import { Button, Card, Input, Table } from '../ui';
 
 interface ExceptionsDrawerProps {
   open: boolean;
@@ -41,6 +42,17 @@ const ExceptionsDrawer: React.FC<ExceptionsDrawerProps> = ({
     );
   }, [items, searchTerm]);
   const selectedLabel = summary.find((item) => item.type === selectedType)?.label || selectedType;
+  const tableColumns = [
+    { header: 'Contrato', accessor: 'contract_id' },
+    { header: 'Cliente', accessor: 'segurado_nome' },
+    { header: 'Vendedor', accessor: 'vendedor_id' },
+    {
+      header: 'Impacto',
+      render: (row: DataQualityExceptionItem) =>
+        formatCurrencyBRL(row.impact),
+      align: 'right'
+    }
+  ];
 
   if (!open) return null;
 
@@ -64,95 +76,86 @@ const ExceptionsDrawer: React.FC<ExceptionsDrawerProps> = ({
 
         <div className="mt-5 grid grid-cols-1 gap-3">
           {summary.map((item) => (
-            <div key={item.type} className="border border-param-border rounded-xl p-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <div className="text-xs font-bold text-white">{item.label}</div>
-                  <div className="text-[10px] text-white/50">Impacto estimado {formatCurrencyBRL(item.impact)}</div>
-                </div>
-                <div className="text-[11px] text-white/70">{item.count} casos</div>
-                <button
-                  type="button"
-                  onClick={() => onSelectType(item.type)}
-                  className={`text-[10px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-[10px] border ${
-                    selectedType === item.type
-                      ? 'border-param-primary text-param-primary'
-                      : 'border-param-border text-white/60 hover:border-param-primary'
-                  }`}
-                >
-                  Abrir lista
-                </button>
-              </div>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {onActionClick && (
-                  <button
-                    type="button"
-                    onClick={() => onActionClick(item.type)}
-                    className="text-[10px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-[10px] border border-param-primary text-param-primary hover:border-white"
+            <Card
+              key={item.type}
+              title={item.label}
+              subtitle={`Impacto estimado ${formatCurrencyBRL(item.impact)}`}
+              className="bg-[var(--surface-2)]"
+              actions={
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant={selectedType === item.type ? 'primary' : 'ghost'}
+                    onClick={() => onSelectType(item.type)}
+                    className="uppercase tracking-[0.3em] text-[10px]"
                   >
-                    {item.action_label}
-                  </button>
-                )}
-              </div>
-            </div>
+                    Abrir lista
+                  </Button>
+                  {onActionClick && item.action_label && (
+                    <Button
+                      variant="secondary"
+                      onClick={() => onActionClick(item.type)}
+                      className="uppercase tracking-[0.3em] text-[10px]"
+                    >
+                      {item.action_label}
+                    </Button>
+                  )}
+                </div>
+              }
+            >
+              <div className="text-[10px] text-[var(--muted)]">{item.count} casos ativos</div>
+            </Card>
           ))}
           {summary.length === 0 && (
-            <div className="text-xs text-gray-600 italic">Nenhuma exceção crítica encontrada.</div>
+            <p className="text-xs text-[var(--muted)] italic">Nenhuma exceção crítica encontrada.</p>
           )}
         </div>
 
-        <div className="mt-6 border-t border-param-border pt-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
+        <Card title="Detalhamento" className="mt-6">
+          <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
-              <div className="text-[10px] uppercase tracking-widest text-white/60">Detalhamento</div>
-              <div className="text-sm font-bold text-white">
+              <p className="text-[10px] uppercase tracking-[0.3em] text-[var(--muted)]">Tipo selecionado</p>
+              <p className="text-sm font-semibold text-[var(--text)]">
                 {selectedType ? `Tipo: ${selectedLabel}` : 'Selecione um tipo'}
-              </div>
+              </p>
             </div>
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(event) => onSearchTermChange(event.target.value)}
-              placeholder="Filtrar por vendedor, cliente ou contrato"
-              className="bg-param-bg border border-param-border text-xs text-white px-3 py-2 h-10 rounded-[10px] focus:outline-none focus:border-param-primary"
-            />
+            <div className="w-full max-w-xs">
+              <Input
+                label="Filtrar"
+                value={searchTerm}
+                onChange={(event) => onSearchTermChange(event.target.value)}
+                placeholder="Vendedor, cliente, contrato"
+              />
+            </div>
           </div>
 
-          {itemsLoading && <div className="text-xs text-gray-600 italic mt-3">Carregando lista...</div>}
-          {!itemsLoading && selectedType && (
-            <div className="mt-3 border border-param-border rounded-xl overflow-hidden">
-              <div className="grid grid-cols-4 bg-param-bg text-[10px] text-gray-400 px-3 py-2">
-                <span>Contrato</span>
-                <span>Cliente</span>
-                <span>Vendedor</span>
-                <span>Impacto</span>
-              </div>
-              <div className="max-h-[320px] overflow-y-auto">
-                {filteredItems.map((item) => (
-                  <div key={item.contract_id} className="grid grid-cols-4 gap-2 px-3 py-2 border-t border-param-border text-[11px]">
-                    <span className="text-white/80">{item.contract_id}</span>
-                    <span className="text-white/70">{item.segurado_nome || '—'}</span>
-                    <span className="text-white/70">{item.vendedor_id || '—'}</span>
-                    <span className="text-white/90 font-bold">{formatCurrencyBRL(item.impact)}</span>
-                  </div>
-                ))}
-                {filteredItems.length === 0 && (
-                  <div className="text-xs text-gray-600 italic px-3 py-4">Nenhum item encontrado.</div>
-                )}
-              </div>
+          {itemsLoading && <p className="text-xs text-[var(--muted)] italic mt-3">Carregando lista...</p>}
+          {!itemsLoading && selectedType && filteredItems.length === 0 && (
+            <p className="text-xs text-[var(--muted)] italic mt-3">Nenhum item encontrado.</p>
+          )}
+
+          {!itemsLoading && selectedType && filteredItems.length > 0 && (
+            <div className="mt-3">
+              <Table<DataQualityExceptionItem>
+                columns={tableColumns}
+                rows={filteredItems}
+                rowKey={(row) => row.contract_id}
+                ariaLabel={`Lista de exceções ${selectedLabel}`}
+              />
             </div>
           )}
 
           {!itemsLoading && selectedType && hasMore && (
-            <button
-              type="button"
-              onClick={onLoadMore}
-              className="mt-3 text-[10px] font-bold uppercase tracking-widest px-3 py-2 rounded-[10px] border border-param-border text-white/70 hover:border-param-primary"
-            >
-              Carregar mais
-            </button>
+            <div className="mt-3 w-full">
+              <Button
+                variant="secondary"
+                onClick={onLoadMore}
+                className="w-full uppercase tracking-[0.3em] text-[10px]"
+              >
+                Carregar mais
+              </Button>
+            </div>
           )}
-        </div>
+        </Card>
       </div>
     </div>
   );

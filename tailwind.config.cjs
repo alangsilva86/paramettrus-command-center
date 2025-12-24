@@ -1,56 +1,72 @@
 module.exports = {
+  darkMode: 'class',
   content: [
     './index.html',
     './App.tsx',
     './index.tsx',
     './components/**/*.{ts,tsx}',
-    './src/components/**/*.{ts,tsx}'
+    './src/**/*.{ts,tsx}',
+    './src/styles/**/*.css'
   ],
   theme: {
     extend: {
       colors: {
-        background: 'var(--bg)',
-        surface: 'var(--surface)',
-        'surface-2': 'var(--surface-2)',
-        text: 'var(--text)',
-        muted: 'var(--muted)',
-        border: 'var(--border)',
-        primary: 'var(--primary)',
-        'primary-press': 'var(--primary-press)',
-        danger: 'var(--danger)',
-        success: 'var(--success)',
-        warning: 'var(--warning)'
-      },
-      spacing: {
-        px: '1px',
-        2: '8px',
-        4: '16px',
-        6: '24px',
-        8: '32px',
-        10: '40px',
-        12: '48px',
-        14: '56px',
-        16: '64px',
-        20: '80px'
+        bg: 'rgb(var(--pm-bg) / <alpha-value>)',
+        surface: 'rgb(var(--pm-surface) / <alpha-value>)',
+        'surface-2': 'rgb(var(--pm-surface-2) / <alpha-value>)',
+        text: 'rgb(var(--pm-text) / <alpha-value>)',
+        muted: 'rgb(var(--pm-muted) / <alpha-value>)',
+        border: 'rgb(var(--pm-border) / <alpha-value>)',
+        primary: 'rgb(var(--pm-primary) / <alpha-value>)',
+        'primary-pressed': 'rgb(var(--pm-primary-pressed) / <alpha-value>)',
+        ring: 'rgb(var(--pm-ring) / <alpha-value>)',
+        danger: 'rgb(var(--danger) / <alpha-value>)',
+        success: 'rgb(var(--success) / <alpha-value>)',
+        warning: 'rgb(var(--warning) / <alpha-value>)',
+        focus: 'rgb(var(--focus-ring) / <alpha-value>)',
+        param: {
+          bg: 'rgb(var(--pm-bg) / <alpha-value>)',
+          card: 'rgb(var(--pm-surface) / <alpha-value>)',
+          'surface-2': 'rgb(var(--pm-surface-2) / <alpha-value>)',
+          border: 'rgb(var(--pm-border) / <alpha-value>)',
+          primary: 'rgb(var(--pm-primary) / <alpha-value>)',
+          'primary-press': 'rgb(var(--pm-primary-pressed) / <alpha-value>)',
+          text: 'rgb(var(--pm-text) / <alpha-value>)',
+          muted: 'rgb(var(--pm-muted) / <alpha-value>)',
+          danger: 'rgb(var(--danger) / <alpha-value>)',
+          success: 'rgb(var(--success) / <alpha-value>)',
+          warning: 'rgb(var(--warning) / <alpha-value>)'
+        }
       },
       borderRadius: {
-        sm: 'var(--radius-sm)',
-        md: 'var(--radius-md)',
-        lg: 'var(--radius-lg)'
+        pm: 'var(--pm-radius)'
       },
       boxShadow: {
-        sm: 'var(--shadow-sm)',
-        md: 'var(--shadow-md)'
+        pm: 'var(--pm-shadow)'
       },
-      fontSize: {
-        base: ['16px', '1.5'],
-        'title-xl': ['20px', '1.4'],
-        'title-lg': ['18px', '1.4'],
-        'title-md': ['16px', '1.4'],
-        'title-sm': ['14px', '1.4']
-      },
-      ringOffsetWidth: {
-        2: '2px'
+      fontFamily: {
+        sans: [
+          'Inter',
+          'ui-sans-serif',
+          'system-ui',
+          '-apple-system',
+          'Segoe UI',
+          'Roboto',
+          'Helvetica',
+          'Arial',
+          'Apple Color Emoji',
+          'Segoe UI Emoji'
+        ],
+        mono: [
+          'ui-monospace',
+          'SFMono-Regular',
+          'Menlo',
+          'Monaco',
+          'Consolas',
+          'Liberation Mono',
+          'Courier New',
+          'monospace'
+        ]
       }
     }
   },

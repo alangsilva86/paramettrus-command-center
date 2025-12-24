@@ -1,0 +1,97 @@
+/* Paramettrus Design Tokens — v1 */
+:root {
+  color-scheme: light dark;
+
+  /* Brand core (guia) */
+  --pm-green: 11 127 22;
+  --pm-green-dk: 5 64 11;
+  --pm-black: 18 18 18;
+  --pm-white: 255 255 255;
+
+  /* Semantic tokens */
+  --pm-bg: var(--pm-white);
+  --pm-surface: 248 250 252;
+  --pm-surface-2: 241 245 249;
+  --pm-text: var(--pm-black);
+  --pm-muted: 71 85 105;
+  --pm-border: 226 232 240;
+  --pm-primary: var(--pm-green);
+  --pm-primary-pressed: var(--pm-green-dk);
+  --pm-ring: var(--pm-green);
+
+  --pm-radius: 14px;
+  --pm-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 1px 1px rgba(0, 0, 0, 0.04);
+
+  --bg: rgb(var(--pm-bg));
+  --surface: rgb(var(--pm-surface));
+  --surface-2: rgb(var(--pm-surface-2));
+  --text: rgb(var(--pm-text));
+  --muted: rgb(var(--pm-muted));
+  --border: rgb(var(--pm-border));
+  --primary: rgb(var(--pm-primary));
+  --primary-press: rgb(var(--pm-primary-pressed));
+  --focus-ring: rgba(var(--pm-ring), 0.6);
+  --danger: 185 28 28;
+  --success: 34 197 94;
+  --warning: 251 191 36;
+}
+
+.dark {
+  --pm-bg: var(--pm-black);
+  --pm-surface: 24 24 24;
+  --pm-surface-2: 32 32 32;
+  --pm-text: var(--pm-white);
+  --pm-muted: 160 174 192;
+  --pm-border: 55 65 81;
+  --pm-primary: var(--pm-green);
+  --pm-primary-pressed: var(--pm-green-dk);
+  --pm-ring: var(--pm-green);
+
+  --bg: rgb(var(--pm-bg));
+  --surface: rgb(var(--pm-surface));
+  --surface-2: rgb(var(--pm-surface-2));
+  --text: rgb(var(--pm-text));
+  --muted: rgb(var(--pm-muted));
+  --border: rgb(var(--pm-border));
+  --primary: rgb(var(--pm-primary));
+  --primary-press: rgb(var(--pm-primary-pressed));
+  --focus-ring: rgba(var(--pm-ring), 0.6);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: rgb(var(--pm-bg));
+  color: rgb(var(--pm-text));
+  font-family: 'Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', 'sans-serif';
+  line-height: 1.5;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  min-height: 100vh;
+}
+
+button,
+input,
+textarea,
+select {
+  font-family: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}

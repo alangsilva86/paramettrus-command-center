@@ -1,7 +1,7 @@
 import React from 'react';
-import WidgetCard from '../../../components/WidgetCard';
 import { DashboardSnapshot } from '../../../types';
 import { formatCurrencyBRL } from '../../../utils/format';
+import { Card } from '../ui';
 
 interface DriversPanelProps {
   snapshot: DashboardSnapshot | null;
@@ -20,9 +20,9 @@ const buildInsight = (label: string, delta: number) => {
 const DriversPanel: React.FC<DriversPanelProps> = ({ snapshot }) => {
   if (!snapshot) {
     return (
-      <WidgetCard title="Drivers do Negócio">
-        <div className="text-xs text-gray-600 italic">Carregando drivers...</div>
-      </WidgetCard>
+      <Card title="Drivers do Negócio">
+        <p className="text-xs text-[var(--muted)] italic">Carregando drivers...</p>
+      </Card>
     );
   }
 
@@ -61,19 +61,19 @@ const DriversPanel: React.FC<DriversPanelProps> = ({ snapshot }) => {
   ];
 
   return (
-    <WidgetCard title="Drivers do Negócio">
-      <div className="text-[10px] text-white/50 mb-3">{driverSummary}</div>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-xs text-gray-300">
+    <Card title="Drivers do Negócio">
+      <div className="text-[10px] text-[var(--muted)] mb-3">{driverSummary}</div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {cards.map((card) => (
-          <div key={card.label} className="border border-param-border rounded-xl p-3">
-            <div className="text-[10px] uppercase tracking-widest text-gray-500">{card.label}</div>
-            <div className="text-lg font-bold text-white mt-1">{card.value}</div>
-            <div className={`text-[10px] mt-1 ${deltaTone(card.delta)}`}>MoM {formatDelta(card.delta)}</div>
-            <div className="text-[10px] text-white/50 mt-1">{card.insight}</div>
+          <div key={card.label} className="border border-[var(--border)] rounded-xl p-3 flex flex-col gap-2">
+            <div className="text-[10px] uppercase tracking-[0.3em] text-[var(--muted)]">{card.label}</div>
+            <div className="text-lg font-bold text-[var(--text)]">{card.value}</div>
+            <div className={`text-[10px] ${deltaTone(card.delta)}`}>MoM {formatDelta(card.delta)}</div>
+            <div className="text-[10px] text-[var(--muted)]">{card.insight}</div>
           </div>
         ))}
       </div>
-    </WidgetCard>
+    </Card>
   );
 };
 

@@ -1,7 +1,7 @@
 import React from 'react';
-import WidgetCard from '../../../components/WidgetCard';
 import { formatCurrencyBRL } from '../../../utils/format';
 import AlertCenter, { AlertItem } from './AlertCenter';
+import { Card } from '../ui';
 
 interface DecisionRowProps {
   meta: number;
@@ -31,48 +31,51 @@ const DecisionRow: React.FC<DecisionRowProps> = ({
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-      <WidgetCard title="Progresso da Meta" className="lg:col-span-1">
-        <div className="flex flex-col gap-3 text-xs text-gray-300">
+      <Card title="Progresso da Meta" className="lg:col-span-1">
+        <div className="flex flex-col gap-3 text-sm text-[var(--text)]">
           <div>
-            <div className="text-[10px] uppercase tracking-widest text-gray-500">Realizado</div>
-            <div className="text-lg font-bold text-white">{formatCurrencyBRL(realized)}</div>
+            <div className="text-[10px] uppercase tracking-[0.3em] text-[var(--muted)]">Realizado</div>
+            <div className="text-xl md:text-2xl font-bold tracking-tight">{formatCurrencyBRL(realized)}</div>
           </div>
           <div className="h-2 rounded-full bg-white/5 overflow-hidden">
-            <div className="h-full bg-param-primary" style={{ width: `${progressPct * 100}%` }} />
+            <div
+              className="h-full bg-[var(--primary)] transition-all duration-300"
+              style={{ width: `${progressPct * 100}%` }}
+            />
           </div>
-          <div className="flex items-center justify-between text-[10px] text-gray-500">
+          <div className="flex items-center justify-between text-[10px] text-[var(--muted)]">
             <span>Meta {formatCurrencyBRL(meta)}</span>
             <span>{Math.round(progressPct * 100)}% atingido</span>
           </div>
-          <div className={`text-[10px] uppercase tracking-widest ${paceTone}`}>
+          <div className={`text-[10px] uppercase tracking-[0.3em] ${paceTone}`}>
             {staleForecast ? 'Previsão bloqueada (dados desatualizados)' : `Forecast ${Math.round(forecastPct * 100)}%`}
           </div>
           {!staleForecast && (
-            <div className="text-sm font-bold text-white">{formatCurrencyBRL(forecast)}</div>
+            <div className="text-lg font-semibold">{formatCurrencyBRL(forecast)}</div>
           )}
         </div>
-      </WidgetCard>
+      </Card>
 
-      <WidgetCard title="Ritmo Necessário" className="lg:col-span-1">
-        <div className="flex flex-col gap-3 text-xs text-gray-300">
+      <Card title="Ritmo Necessário" className="lg:col-span-1">
+        <div className="flex flex-col gap-3 text-sm text-[var(--text)]">
           <div>
-            <div className="text-[10px] uppercase tracking-widest text-gray-500">Meta diária</div>
-            <div className={`text-2xl font-bold ${gapDiario > 0 ? 'text-param-primary' : 'text-param-success'}`}>
+            <div className="text-[10px] uppercase tracking-[0.3em] text-[var(--muted)]">Meta diária</div>
+            <div className={`text-2xl font-bold ${gapDiario > 0 ? 'text-[var(--primary)]' : 'text-[var(--success)]'}`}>
               {gapDiario > 0 ? formatCurrencyBRL(gapDiario) : 'Meta batida'}
             </div>
           </div>
-          <div className="text-[10px] text-white/50">
+          <div className="text-[10px] text-[var(--muted)]">
             Gap total: {formatCurrencyBRL(Math.max(0, gapTotal))}
           </div>
-          <div className="text-[10px] text-white/50">
+          <div className="text-[10px] text-[var(--muted)]">
             {diasRestantes ? `Faltam ~${diasRestantes} dias úteis` : 'Ritmo estável'}
           </div>
         </div>
-      </WidgetCard>
+      </Card>
 
-      <WidgetCard title="Ações do Dia" className="lg:col-span-1">
+      <Card title="Ações do Dia" className="lg:col-span-1">
         <AlertCenter items={alertItems} />
-      </WidgetCard>
+      </Card>
     </div>
   );
 };

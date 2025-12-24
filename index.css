@@ -2,107 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  color-scheme: dark;
-
-  /* Neutral surfaces */
-  --bg: #05060a;
-  --surface: #0f1119;
-  --surface-2: #15151f;
-  --text: #f8f9fb;
-  --muted: rgba(248, 249, 251, 0.6);
-  --border: rgba(255, 255, 255, 0.12);
-
-  /* States */
-  --primary: #ff7b03;
-  --primary-press: #d55b03;
-  --danger: #ff4d61;
-  --success: #22c55e;
-  --warning: #fbbf24;
-  --focus-ring: rgba(59, 130, 246, 0.6);
-
-  /* Radii */
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 24px;
-
-  /* Shadows */
-  --shadow-sm: 0 10px 24px rgba(5, 6, 10, 0.45);
-  --shadow-md: 0 20px 48px rgba(5, 6, 10, 0.55);
-
-  /* Spacing grid (multiples of 8) */
-  --space-1: 8px;
-  --space-2: 16px;
-  --space-3: 24px;
-  --space-4: 32px;
-  --space-5: 40px;
-  --space-6: 48px;
-  --space-7: 56px;
-  --space-8: 64px;
-}
-
-.dark {
-  --bg: #030408;
-  --surface: #0b0d15;
-  --surface-2: #111421;
-  --text: #f1f5f9;
-  --muted: rgba(241, 245, 249, 0.65);
-  --border: rgba(255, 255, 255, 0.08);
-  --primary: #ffa23e;
-  --primary-press: #e98615;
-  --danger: #ff5f6d;
-  --success: #2dd4ab;
-  --warning: #fcd34d;
-  --focus-ring: rgba(14, 165, 233, 0.6);
-}
-
-@layer base {
-  *,
-  *::before,
-  *::after {
-    box-sizing: border-box;
-  }
-
-  html {
-    font-size: 16px;
-  }
-
-  body {
-    margin: 0;
-    min-height: 100vh;
-    background-color: var(--bg);
-    color: var(--text);
-    font-family: 'Inter', 'Roboto', sans-serif;
-    font-size: 16px;
-    line-height: 1.5;
-    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
-  }
-
-  button,
-  input,
-  textarea,
-  select {
-    font-family: inherit;
-    color: inherit;
-  }
-
-  :focus-visible {
-    outline: 2px solid var(--focus-ring);
-    outline-offset: 3px;
-  }
-}
-
-.safe-area-bottom {
-  padding-bottom: env(safe-area-inset-bottom);
-}
-
-/* Custom scrollbar to keep the dark premium aesthetic */
+/* Custom scrollbar to keep the premium aesthetic */
 ::-webkit-scrollbar {
   width: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #07090f;
+  background: #0f1119;
 }
 
 ::-webkit-scrollbar-thumb {

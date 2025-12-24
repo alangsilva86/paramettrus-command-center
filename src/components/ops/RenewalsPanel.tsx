@@ -1,7 +1,7 @@
 import React from 'react';
-import WidgetCard from '../../../components/WidgetCard';
 import { formatCurrencyBRL } from '../../../utils/format';
 import { RenewalListItem } from '../../../types';
+import { Card } from '../ui';
 
 interface RenewalsPanelProps {
   renewalsD7: RenewalListItem[];
@@ -21,31 +21,35 @@ const renderItem = (item: RenewalListItem) => (
 
 const RenewalsPanel: React.FC<RenewalsPanelProps> = ({ renewalsD7, renewalsD15, renewalsD30 }) => {
   return (
-    <WidgetCard title="Renovações Críticas">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs text-gray-300">
-        <div>
-          <div className="text-[10px] uppercase tracking-widest text-param-danger mb-2">D-7</div>
-          <div className="space-y-2 max-h-40 overflow-y-auto pr-2">
-            {renewalsD7.slice(0, 6).map(renderItem)}
-            {renewalsD7.length === 0 && <div className="text-gray-600 italic">Sem críticos D-7</div>}
+    <Card title="Renovações Críticas">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {[
+          { label: 'D-7', tone: 'critical', data: renewalsD7 },
+          { label: 'D-15', tone: 'warning', data: renewalsD15 },
+          { label: 'D-30', tone: 'primary', data: renewalsD30 }
+        ].map((group) => (
+          <div key={group.label} className="space-y-2">
+            <div className={`text-[10px] uppercase tracking-[0.3em] ${
+              group.tone === 'critical'
+                ? 'text-[var(--danger)]'
+                : group.tone === 'warning'
+                ? 'text-[var(--warning)]'
+                : 'text-[var(--primary)]'
+            }`}>
+              {group.label}
+            </div>
+            <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+              {group.data.slice(0, 6).map(renderItem)}
+              {group.data.length === 0 && (
+                <div className="text-xs italic text-[var(--muted)]">
+                  Nenhum {group.label === 'D-30' ? 'pré-alerta' : 'alerta'}.
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-        <div>
-          <div className="text-[10px] uppercase tracking-widest text-param-warning mb-2">D-15</div>
-          <div className="space-y-2 max-h-40 overflow-y-auto pr-2">
-            {renewalsD15.slice(0, 6).map(renderItem)}
-            {renewalsD15.length === 0 && <div className="text-gray-600 italic">Sem alertas D-15</div>}
-          </div>
-        </div>
-        <div>
-          <div className="text-[10px] uppercase tracking-widest text-param-accent mb-2">D-30</div>
-          <div className="space-y-2 max-h-40 overflow-y-auto pr-2">
-            {renewalsD30.slice(0, 6).map(renderItem)}
-            {renewalsD30.length === 0 && <div className="text-gray-600 italic">Sem pré-alertas D-30</div>}
-          </div>
-        </div>
+        ))}
       </div>
-    </WidgetCard>
+    </Card>
   );
 };
 
