@@ -36,9 +36,9 @@ const monthRefToIndex = (monthRef) => {
 
 const normalizeMonthRange = (startMonth, endMonth) => {
   if (monthRefToIndex(startMonth) <= monthRefToIndex(endMonth)) {
-    return { startMonth, endMonth };
+    return { start: startMonth, end: endMonth };
   }
-  return { startMonth: endMonth, endMonth: startMonth };
+  return { start: endMonth, end: startMonth };
 };
 
 const listMonthRefs = (startMonth, endMonth) => {
@@ -51,6 +51,25 @@ const listMonthRefs = (startMonth, endMonth) => {
     months.push(`${year}-${month}`);
   }
   return months;
+};
+
+const compareMonthRefs = (a, b) => monthRefToIndex(a) - monthRefToIndex(b);
+
+const clampMonthRef = (value, min, max) => {
+  if (!value) return value;
+  let result = value;
+  if (min && compareMonthRefs(result, min) < 0) result = min;
+  if (max && compareMonthRefs(result, max) > 0) result = max;
+  return result;
+};
+
+const getAvailableMonthBounds = async () => {
+  const result = await query('SELECT MIN(month_ref) AS min_ref, MAX(month_ref) AS max_ref FROM contracts_norm');
+  const row = result.rows[0] || {};
+  return {
+    min: row.min_ref || null,
+    max: row.max_ref || null
+  };
 };
 
 const shiftDateByMonths = (date, deltaMonths) => {
@@ -1315,15 +1334,31 @@ export const buildPeriodSnapshot = async ({
   filters = {}
 }) => {
   const startedAt = Date.now();
-  const normalized = normalizeMonthRange(startMonth, endMonth);
-  const rangeStart = normalized.startMonth;
-  const rangeEnd = normalized.endMonth;
+  const requestedRange = normalizeMonthRange(startMonth, endMonth);
+  const bounds = await getAvailableMonthBounds();
+  const clampedStart = clampMonthRef(requestedRange.start, bounds.min, bounds.max);
+  const clampedEnd = clampMonthRef(requestedRange.end, bounds.min, bounds.max);
+  const actualStart = clampedStart || requestedRange.start;
+  const actualEnd = clampedEnd || requestedRange.end;
+  const range = normalizeMonthRange(actualStart, actualEnd);
+  const rangeStart = range.start;
+  const rangeEnd = range.end;
   const months = listMonthRefs(rangeStart, rangeEnd);
+  const periodClamped =
+    requestedRange.start !== rangeStart || requestedRange.end !== rangeEnd;
+  const periodLabel = rangeStart === rangeEnd ? rangeStart : `${rangeStart}..${rangeEnd}`;
+  const availability =
+    bounds.min || bounds.max
+      ? { start: bounds.min, end: bounds.max }
+      : null;
 
   logInfo('snapshot', 'Montando snapshot de periodo', {
     start_month: rangeStart,
     end_month: rangeEnd,
+    requested_start: requestedRange.start,
+    requested_end: requestedRange.end,
     months: months.length,
+    clamped: periodClamped,
     filters
   });
 
@@ -1440,7 +1475,13 @@ export const buildPeriodSnapshot = async ({
       start: rangeStart,
       end: rangeEnd,
       months: months.length,
-      label: rangeStart === rangeEnd ? rangeStart : `${rangeStart}..${rangeEnd}`
+      label: periodLabel,
+      requested: {
+        start: requestedRange.start,
+        end: requestedRange.end
+      },
+      clamped: periodClamped,
+      available: availability
     },
     data_coverage: dataCoverage,
     filters: filterOptions,

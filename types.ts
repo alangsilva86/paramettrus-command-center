@@ -62,14 +62,25 @@ export interface XpLedgerEntry {
 }
 
 // --- API SNAPSHOT PAYLOAD (Section 2.6) ---
-export interface DashboardSnapshot {
-  month: string;
-  period?: {
+export interface SnapshotPeriod {
+  start: string;
+  end: string;
+  months: number;
+  label?: string;
+  requested?: {
     start: string;
     end: string;
-    months: number;
-    label?: string;
   };
+  clamped?: boolean;
+  available?: {
+    start: string | null;
+    end: string | null;
+  } | null;
+}
+
+export interface DashboardSnapshot {
+  month: string;
+  period?: SnapshotPeriod;
   scenario_id?: string | null;
   rules_version_id?: string | null;
   created_at?: string | null;

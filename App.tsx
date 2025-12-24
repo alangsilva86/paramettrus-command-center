@@ -582,6 +582,17 @@ const App: React.FC = () => {
                 <div className="mt-3 text-[10px] text-[var(--muted)]">
                   Período ativo: {periodRange.label}
                 </div>
+                {data?.period?.available && data.period.available.start && data.period.available.end && (
+                  <div className="mt-2 text-[10px] text-param-muted">
+                    Dados disponíveis: {data.period.available.start} → {data.period.available.end}
+                  </div>
+                )}
+                {data?.period?.clamped && data.period.requested && (
+                  <div className="mt-1 text-[10px] text-param-warning">
+                    O período solicitado ({data.period.requested.start} → {data.period.requested.end}) foi ajustado para
+                    {` ${data.period.start} → ${data.period.end}`} por causa da janela disponível.
+                  </div>
+                )}
               </div>
               <div className="bg-[var(--surface)] border border-[var(--border)] p-4 rounded-xl lg:col-span-1">
                 <Select
