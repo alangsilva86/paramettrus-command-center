@@ -307,16 +307,39 @@ export const refreshZohoPeriod = async ({
         duplicatesCount
       };
     } catch (error) {
-      logError('ingest', 'Falha no refresh de periodo', { error: error?.message });
+      const statusCode = error?.status || error?.response?.status || null;
+      const errorCode = error?.code || error?.response?.data?.code || null;
+      const detail =
+        error?.detail ||
+        error?.response?.data?.message ||
+        error?.response?.data?.description ||
+        error?.message ||
+        'Period refresh failed';
+      logError('ingest', 'Falha no refresh de periodo', {
+        error: detail,
+        status_code: statusCode,
+        code: errorCode
+      });
       await finalizeIngestionRun(client, runId, {
         status: 'FAILED',
         finishedAt: new Date(),
         fetchedCount,
         insertedNormCount,
         duplicatesCount,
-        error: error?.message || 'Period refresh failed'
+        error: detail,
+        details: {
+          mode: 'period_refresh',
+          start_month: normalized.start,
+          end_month: normalized.end,
+          status_code: statusCode,
+          error_code: errorCode
+        }
       });
-      throw error;
+      const wrapped = new Error('Falha ao atualizar dados do Zoho');
+      wrapped.status = statusCode;
+      wrapped.code = errorCode;
+      wrapped.detail = detail;
+      throw wrapped;
     }
   });
 };

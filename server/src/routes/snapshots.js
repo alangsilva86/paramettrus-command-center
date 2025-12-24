@@ -167,9 +167,17 @@ router.get('/period', async (req, res) => {
     logError('snapshot', 'Falha ao montar snapshot de periodo', {
       start_month: startMonth,
       end_month: endMonth,
-      error: error.message
+      error: error.message,
+      detail: error.detail,
+      code: error.code,
+      status: error.status
     });
-    return res.status(500).json({ error: error.message });
+    const status = error?.status && Number.isInteger(error.status) ? error.status : 500;
+    return res.status(status).json({
+      error: error?.message || 'Falha ao montar snapshot de período.',
+      detail: error?.detail || null,
+      code: error?.code || null
+    });
   }
 });
 
