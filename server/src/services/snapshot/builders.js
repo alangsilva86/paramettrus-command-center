@@ -6,13 +6,11 @@ import {
   formatMonthRef,
   startOfMonth
 } from '../../utils/date.js';
-import { toReais } from '../../utils/money.js';
 import { logInfo, logSuccess, logWarn } from '../../utils/logger.js';
 import { computeLedgerForMonth } from '../ledgerService.js';
 import { getRulesVersionById, getRulesVersionForDate } from '../rulesService.js';
 import { getRenewalMetrics } from '../renewalService.js';
 import { getCustomersMonoprodutoPct, getDailyTrend, getDailyTrendForPeriod, getDataCoverage, getDataCoverageForPeriod, getFilterOptions, getFilterOptionsForPeriod, getMonthlyAggregates, getPeriodAggregates } from './aggregates.js';
-import { SNAPSHOT_MONEY_UNIT } from './constants.js';
 import { buildMonthlySnapshotDto, buildPeriodSnapshotDto } from './dto.js';
 import { getLeaderboard, getLeaderboardForPeriod } from './leaderboard.js';
 import { getMixData, getMixDataForPeriod } from './mix.js';
@@ -95,7 +93,7 @@ export const buildMonthlySnapshot = async ({
     throw new Error('rules_version_id invalido');
   }
   const rules = overrideRules || (await resolveRulesForMonth(monthRef));
-  const metaComissao = toReais(rules.meta_global_comissao || 0, SNAPSHOT_MONEY_UNIT);
+  const metaComissao = Number(rules.meta_global_comissao || 0);
 
   const rulesVersionToUse = overrideRules ? overrideRules.rules_version_id : null;
   await computeLedgerForMonth({
@@ -349,7 +347,7 @@ export const buildPeriodSnapshot = async ({ startMonth, endMonth, filters = {} }
 
   const rulesList = await Promise.all(months.map(resolveRulesForMonth));
   const metaTotal = rulesList.reduce(
-    (sum, rules) => sum + toReais(rules.meta_global_comissao || 0, SNAPSHOT_MONEY_UNIT),
+    (sum, rules) => sum + Number(rules.meta_global_comissao || 0),
     0
   );
   const endMonthRules = await resolveRulesForMonth(rangeEnd);
