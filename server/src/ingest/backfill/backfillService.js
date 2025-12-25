@@ -2,19 +2,60 @@ import { withClient } from '../../db.js';
 import { config } from '../../config.js';
 import { formatDate } from '../../utils/date.js';
 import { logError, logInfo, logSuccess, logWarn } from '../../utils/logger.js';
-import { finalizeIngestionRun, insertIngestionRun } from '../ingestRepository.js';
+import { finalizeIngestionRun, insertIngestionRun, upsertRawPayloadBatch } from '../ingestRepository.js';
 import { buildBackfillCriteria, fetchBackfillRecords } from './backfillFetch.js';
 import { normalizeBackfillRecord } from './backfillNormalize.js';
-import { persistBackfillRecord } from './backfillPersist.js';
+import { buildBackfillBatchCache, persistNormalizedRecord } from './backfillPersist.js';
 import { buildBackfillRanges } from './backfillRanges.js';
+import { classifyBackfillRecord, getBackfillDedupKey, markDeduped } from './backfillRules.js';
 
 const SOURCE = 'zoho';
+const BACKFILL_BATCH_SIZE = Math.max(1, Number(config.ingest?.backfillBatchSize || 200));
 
 const resolveDateField = (mode) => {
   if (mode === 'modified') return config.zohoFields.modifiedTime || 'Modified_Time';
   if (mode === 'inicio') return config.zohoFields.inicio;
   return config.zohoFields.dataEfetivacao;
 };
+
+const chunkArray = (items, size) => {
+  const chunks = [];
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size));
+  }
+  return chunks;
+};
+
+const prepareBackfillBatch = (records, seenIds) => {
+  const entries = [];
+  let invalid = 0;
+  let incomplete = 0;
+  let duplicates = 0;
+
+  for (const record of records) {
+    const normalized = normalizeBackfillRecord(record);
+    const classification = classifyBackfillRecord(normalized);
+    invalid += classification.invalidCount;
+    incomplete += classification.incompleteCount;
+    if (classification.skip) continue;
+
+    const dedupKey = getBackfillDedupKey(normalized);
+    if (markDeduped(seenIds, dedupKey)) {
+      duplicates += 1;
+      continue;
+    }
+
+    entries.push({ record, normalized });
+  }
+
+  return { entries, invalid, incomplete, duplicates };
+};
+
+const buildRawPayloadItems = (entries) =>
+  entries.map(({ record, normalized }) => ({
+    record,
+    sourceContractIdOverride: normalized.is_synthetic_id ? normalized.contract_id : null
+  }));
 
 /**
  * @typedef {Object} BackfillOptions
@@ -81,30 +122,37 @@ export const runBackfill = async ({
           const records = await fetchBackfillRecords({ criteria });
           fetchedCount += records.length;
 
-          for (const record of records) {
-            const normalized = normalizeBackfillRecord(record);
-            if (!normalized.month_ref) {
-              invalidCount += 1;
-              continue;
-            }
-            if (normalized.is_incomplete) incompleteCount += 1;
-            if (normalized.is_invalid) invalidCount += 1;
+          const batches = chunkArray(records, BACKFILL_BATCH_SIZE);
+          for (const batch of batches) {
+            const prepared = prepareBackfillBatch(batch, seenIds);
+            invalidCount += prepared.invalid;
+            incompleteCount += prepared.incomplete;
+            duplicatesCount += prepared.duplicates;
 
-            const persistResult = await persistBackfillRecord({
+            if (!prepared.entries.length) continue;
+            if (dryRun) continue;
+
+            const caches = await buildBackfillBatchCache(client, prepared.entries);
+            const rawResult = await upsertRawPayloadBatch({
               client,
-              record,
-              normalized,
+              items: buildRawPayloadItems(prepared.entries),
               fetchedAt,
-              source: SOURCE,
-              seenIds,
-              dryRun
+              source: SOURCE
             });
-            insertedNormCount += persistResult.insertedNorm;
-            updatedNormCount += persistResult.updatedNorm;
-            duplicatesCount += persistResult.duplicates;
-            rawInserted += persistResult.rawInserted;
-            rawUpdated += persistResult.rawUpdated;
-            rawSkipped += persistResult.rawSkipped;
+            rawInserted += rawResult.inserted;
+            rawUpdated += rawResult.updated;
+            rawSkipped += rawResult.skipped;
+
+            for (const entry of prepared.entries) {
+              const persistResult = await persistNormalizedRecord({
+                client,
+                normalized: entry.normalized,
+                caches
+              });
+              insertedNormCount += persistResult.insertedNorm;
+              updatedNormCount += persistResult.updatedNorm;
+              duplicatesCount += persistResult.duplicates;
+            }
           }
         }
       }

@@ -1,4 +1,5 @@
 import { toReaisDb } from './constants.js';
+import { toNumber } from './numbers.js';
 import { fetchVendorAggregates, fetchVendorAggregatesForPeriod } from './repository.js';
 import { monthRefToIndex, shiftMonthRef } from './utils.js';
 
@@ -9,18 +10,19 @@ const normalizeVendorAggregates = (rows) =>
       ...row,
       comissao_total: toReaisDb(row.comissao_total || 0),
       premio_total: toReaisDb(row.premio_total || 0),
-      sales_count: Number(row.sales_count || 0)
+      sales_count: toNumber(row.sales_count)
     }));
 
-export const getVendorAggregates = async ({ monthRef, filters = {} }) => {
-  const rows = await fetchVendorAggregates({ monthRef, filters });
+const getVendorAggregatesBase = async (fetcher, params) => {
+  const rows = await fetcher(params);
   return normalizeVendorAggregates(rows);
 };
 
-export const getVendorAggregatesForPeriod = async ({ startMonth, endMonth, filters = {} }) => {
-  const rows = await fetchVendorAggregatesForPeriod({ startMonth, endMonth, filters });
-  return normalizeVendorAggregates(rows);
-};
+export const getVendorAggregates = async ({ monthRef, filters = {} }) =>
+  getVendorAggregatesBase(fetchVendorAggregates, { monthRef, filters });
+
+export const getVendorAggregatesForPeriod = async ({ startMonth, endMonth, filters = {} }) =>
+  getVendorAggregatesBase(fetchVendorAggregatesForPeriod, { startMonth, endMonth, filters });
 
 const buildVendorOpportunities = (renewals) => {
   const map = new Map();
@@ -38,10 +40,10 @@ const buildVendorOpportunities = (renewals) => {
     map.get(key).push({
       contract_id: item.contract_id,
       segurado_nome: item.segurado_nome,
-      comissao_valor: Number(item.comissao_valor || 0),
+      comissao_valor: toNumber(item.comissao_valor),
       days_to_end: item.days_to_end,
       stage: item.stage,
-      impact_score: Number(item.impact_score || 0)
+      impact_score: toNumber(item.impact_score)
     });
   }
   map.forEach((items, key) => {
@@ -58,23 +60,23 @@ export const getVendorStats = async ({ monthRef, filters = {}, leaderboard = [],
     getVendorAggregates({ monthRef: prevMonthRef, filters })
   ]);
   const prevMap = new Map(prevRows.map((row) => [row.vendedor_id, row]));
-  const xpMap = new Map(leaderboard.map((row) => [row.vendedor_id, Number(row.xp || 0)]));
+  const xpMap = new Map(leaderboard.map((row) => [row.vendedor_id, toNumber(row.xp)]));
   const opportunitiesMap = buildVendorOpportunities(renewals);
 
   return currentRows.map((row) => {
     const prev = prevMap.get(row.vendedor_id);
-    const comissao = Number(row.comissao_total || 0);
-    const premio = Number(row.premio_total || 0);
-    const prevComm = Number(prev?.comissao_total || 0);
+    const comissao = toNumber(row.comissao_total);
+    const premio = toNumber(row.premio_total);
+    const prevComm = toNumber(prev?.comissao_total);
     const growth = prevComm > 0 ? (comissao - prevComm) / prevComm : 0;
     const gap = Math.max(0, prevComm - comissao);
     const gapDiario = diasUteisRestantes > 0 ? gap / diasUteisRestantes : 0;
     return {
       vendedor_id: row.vendedor_id,
-      xp: Number(xpMap.get(row.vendedor_id) || 0),
+      xp: toNumber(xpMap.get(row.vendedor_id)),
       comissao,
       premio,
-      sales_count: Number(row.sales_count || 0),
+      sales_count: toNumber(row.sales_count),
       growth_mom_pct: Number(growth.toFixed(3)),
       gap_comissao: Number(gap.toFixed(2)),
       gap_diario: Number(gapDiario.toFixed(2)),
@@ -99,23 +101,23 @@ export const getVendorStatsForPeriod = async ({
     getVendorAggregatesForPeriod({ startMonth: prevStart, endMonth: prevEnd, filters })
   ]);
   const prevMap = new Map(prevRows.map((row) => [row.vendedor_id, row]));
-  const xpMap = new Map(leaderboard.map((row) => [row.vendedor_id, Number(row.xp || 0)]));
+  const xpMap = new Map(leaderboard.map((row) => [row.vendedor_id, toNumber(row.xp)]));
   const opportunitiesMap = buildVendorOpportunities(renewals);
 
   return currentRows.map((row) => {
     const prev = prevMap.get(row.vendedor_id);
-    const comissao = Number(row.comissao_total || 0);
-    const premio = Number(row.premio_total || 0);
-    const prevComm = Number(prev?.comissao_total || 0);
+    const comissao = toNumber(row.comissao_total);
+    const premio = toNumber(row.premio_total);
+    const prevComm = toNumber(prev?.comissao_total);
     const growth = prevComm > 0 ? (comissao - prevComm) / prevComm : 0;
     const gap = Math.max(0, prevComm - comissao);
     const gapDiario = diasUteisRestantes > 0 ? gap / diasUteisRestantes : 0;
     return {
       vendedor_id: row.vendedor_id,
-      xp: Number(xpMap.get(row.vendedor_id) || 0),
+      xp: toNumber(xpMap.get(row.vendedor_id)),
       comissao,
       premio,
-      sales_count: Number(row.sales_count || 0),
+      sales_count: toNumber(row.sales_count),
       growth_mom_pct: Number(growth.toFixed(3)),
       gap_comissao: Number(gap.toFixed(2)),
       gap_diario: Number(gapDiario.toFixed(2)),

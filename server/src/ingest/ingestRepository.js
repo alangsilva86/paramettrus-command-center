@@ -63,6 +63,16 @@ const buildNormalizedValues = (contract) => {
   return values;
 };
 
+const buildExistingRowInfo = (row) => ({
+  contractId: row.contract_id,
+  rowHash: row.row_hash,
+  vendedorId: row.vendedor_id,
+  modifiedTime: row.modified_time,
+  addedTime: row.added_time,
+  zohoRecordId: row.zoho_record_id,
+  zohoModifiedTime: row.zoho_modified_time
+});
+
 export const insertIngestionRun = async (client, startedAt) => {
   const result = await client.query(
     `INSERT INTO ingestion_runs (started_at, status)
@@ -174,6 +184,97 @@ export const upsertRawPayload = async ({
   return { inserted: 0, updated: 1, skipped: 0 };
 };
 
+export const upsertRawPayloadBatch = async ({ client, items, fetchedAt, source }) => {
+  if (!items.length) return { inserted: 0, updated: 0, skipped: 0 };
+
+  const prepared = items.map((item) => {
+    const payload = JSON.stringify(item.record);
+    const payloadHash = sha256(payload);
+    const sourceContractId = item.sourceContractIdOverride || item.record.ID || item.record.id || null;
+    return {
+      sourceContractId,
+      payload,
+      payloadHash
+    };
+  });
+
+  const withoutId = prepared.filter((item) => !item.sourceContractId);
+  const withId = prepared.filter((item) => item.sourceContractId);
+  let inserted = 0;
+  let updated = 0;
+  let skipped = 0;
+
+  const insertRows = async (rows) => {
+    if (!rows.length) return;
+    const values = [];
+    const placeholders = rows.map((row, idx) => {
+      const base = idx * 5;
+      values.push(source, row.sourceContractId || null, row.payload, fetchedAt, row.payloadHash);
+      return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5})`;
+    });
+    await client.query(
+      `INSERT INTO contracts_raw (source, source_contract_id, payload, fetched_at, payload_hash)\n       VALUES ${placeholders.join(', ')}`,
+      values
+    );
+  };
+
+  if (withoutId.length) {
+    await insertRows(withoutId);
+    inserted += withoutId.length;
+  }
+
+  if (withId.length) {
+    const ids = [...new Set(withId.map((item) => item.sourceContractId))];
+    const existing = await client.query(
+      `SELECT DISTINCT ON (source_contract_id) source_contract_id, raw_id, payload_hash\n       FROM contracts_raw\n       WHERE source = $1 AND source_contract_id = ANY($2)\n       ORDER BY source_contract_id, fetched_at DESC, raw_id DESC`,
+      [source, ids]
+    );
+    const existingMap = new Map(
+      existing.rows.map((row) => [row.source_contract_id, row])
+    );
+
+    const toInsert = [];
+    const toUpdate = [];
+    for (const item of withId) {
+      const existingRow = existingMap.get(item.sourceContractId);
+      if (!existingRow) {
+        toInsert.push(item);
+        inserted += 1;
+        continue;
+      }
+      if (existingRow.payload_hash === item.payloadHash) {
+        skipped += 1;
+        continue;
+      }
+      toUpdate.push({
+        rawId: existingRow.raw_id,
+        payload: item.payload,
+        payloadHash: item.payloadHash
+      });
+      updated += 1;
+    }
+
+    if (toInsert.length) {
+      await insertRows(toInsert);
+    }
+
+    if (toUpdate.length) {
+      const values = [];
+      const placeholders = toUpdate.map((row, idx) => {
+        const base = idx * 4;
+        values.push(row.rawId, row.payload, fetchedAt, row.payloadHash);
+        return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4})`;
+      });
+      await client.query(
+        `UPDATE contracts_raw AS cr\n         SET payload = v.payload,\n             fetched_at = v.fetched_at,\n             payload_hash = v.payload_hash\n         FROM (VALUES ${placeholders.join(', ')}) AS v(raw_id, payload, fetched_at, payload_hash)\n         WHERE cr.raw_id = v.raw_id`,
+        values
+      );
+    }
+  }
+
+  return { inserted, updated, skipped };
+};
+
 export const getExistingRowInfo = async (client, { contractId, zohoRecordId } = {}) => {
   const columns = [
     'contract_id',
@@ -203,17 +304,77 @@ export const getExistingRowInfo = async (client, { contractId, zohoRecordId } = 
     const result = await client.query(queryConfig.text, queryConfig.values);
     if (result.rowCount === 0) continue;
     const row = result.rows[0];
-    return {
-      contractId: row.contract_id,
-      rowHash: row.row_hash,
-      vendedorId: row.vendedor_id,
-      modifiedTime: row.modified_time,
-      addedTime: row.added_time,
-      zohoRecordId: row.zoho_record_id,
-      zohoModifiedTime: row.zoho_modified_time
-    };
+    return buildExistingRowInfo(row);
   }
   return null;
+};
+
+export const getExistingRowInfoBatch = async (
+  client,
+  { contractIds = [], zohoRecordIds = [] } = {}
+) => {
+  const columns = [
+    'contract_id',
+    'row_hash',
+    'vendedor_id',
+    'modified_time',
+    'added_time',
+    'zoho_record_id',
+    'zoho_modified_time'
+  ].join(', ');
+  const byContractId = new Map();
+  const byZohoRecordId = new Map();
+
+  if (zohoRecordIds.length) {
+    const result = await client.query(
+      `SELECT DISTINCT ON (zoho_record_id) ${columns}
+       FROM contracts_norm
+       WHERE zoho_record_id = ANY($1)
+       ORDER BY zoho_record_id, modified_time DESC NULLS LAST, added_time DESC NULLS LAST, created_at DESC`,
+      [zohoRecordIds]
+    );
+    result.rows.forEach((row) => {
+      if (!row.zoho_record_id) return;
+      byZohoRecordId.set(row.zoho_record_id, buildExistingRowInfo(row));
+    });
+  }
+
+  if (contractIds.length) {
+    const result = await client.query(
+      `SELECT DISTINCT ON (contract_id) ${columns}
+       FROM contracts_norm
+       WHERE contract_id = ANY($1)
+       ORDER BY contract_id, modified_time DESC NULLS LAST, added_time DESC NULLS LAST, created_at DESC`,
+      [contractIds]
+    );
+    result.rows.forEach((row) => {
+      if (!row.contract_id) return;
+      byContractId.set(row.contract_id, buildExistingRowInfo(row));
+    });
+  }
+
+  return { byContractId, byZohoRecordId };
+};
+
+export const getLatestByRowHashBatch = async (client, rowHashes = []) => {
+  if (!rowHashes.length) return new Map();
+  const result = await client.query(
+    `SELECT DISTINCT ON (row_hash) row_hash, contract_id, modified_time, added_time
+     FROM contracts_norm
+     WHERE row_hash = ANY($1)
+     ORDER BY row_hash, modified_time DESC NULLS LAST, added_time DESC NULLS LAST, created_at DESC`,
+    [rowHashes]
+  );
+  return new Map(
+    result.rows.map((row) => [
+      row.row_hash,
+      {
+        contract_id: row.contract_id,
+        modified_time: row.modified_time,
+        added_time: row.added_time
+      }
+    ])
+  );
 };
 
 export const resolveTimestamp = (record) => {

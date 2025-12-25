@@ -14,27 +14,12 @@ import { query } from '../db.js';
 import { getRulesVersionById, getRulesVersionForDate } from '../services/rulesService.js';
 import { refreshZohoPeriod } from '../ingest/ingestService.js';
 import { startOfMonth } from '../utils/date.js';
+import { countMonthsInRange, normalizeMonthRange } from '../utils/monthRef.js';
 import { logError, logInfo, logWarn } from '../utils/logger.js';
 
 const router = express.Router();
 
 const isValidMonth = (value) => /^\d{4}-\d{2}$/.test(value);
-const monthRefToIndex = (monthRef) => {
-  const [year, month] = monthRef.split('-').map(Number);
-  return year * 12 + (month - 1);
-};
-const normalizeMonthRange = (startMonth, endMonth) => {
-  if (monthRefToIndex(startMonth) <= monthRefToIndex(endMonth)) {
-    return { start: startMonth, end: endMonth };
-  }
-  return { start: endMonth, end: startMonth };
-};
-const countMonthsInRange = (startMonth, endMonth) => {
-  const normalized = normalizeMonthRange(startMonth, endMonth);
-  const startIdx = monthRefToIndex(normalized.start);
-  const endIdx = monthRefToIndex(normalized.end);
-  return endIdx - startIdx + 1;
-};
 const isSnapshotCompatible = (snapshot) =>
   snapshot &&
   snapshot.snapshot_version === SNAPSHOT_VERSION &&

@@ -1,6 +1,5 @@
 import { config } from '../../config.js';
 import {
-  addDays,
   countBusinessDays,
   endOfMonth,
   formatDate,
@@ -13,15 +12,14 @@ import { computeLedgerForMonth } from '../ledgerService.js';
 import { getRulesVersionById, getRulesVersionForDate } from '../rulesService.js';
 import { getRenewalMetrics } from '../renewalService.js';
 import { getCustomersMonoprodutoPct, getDailyTrend, getDailyTrendForPeriod, getDataCoverage, getDataCoverageForPeriod, getFilterOptions, getFilterOptionsForPeriod, getMonthlyAggregates, getPeriodAggregates } from './aggregates.js';
-import { SNAPSHOT_MONEY_UNIT, toReaisDb } from './constants.js';
+import { SNAPSHOT_MONEY_UNIT } from './constants.js';
 import { buildMonthlySnapshotDto, buildPeriodSnapshotDto } from './dto.js';
 import { getLeaderboard, getLeaderboardForPeriod } from './leaderboard.js';
 import { getMixData, getMixDataForPeriod } from './mix.js';
-import { getRadarData, getRadarDataForPeriod } from './radar.js';
+import { getRadarDataForMonth, getRadarDataForPeriod } from './radar.js';
 import { validateSnapshot } from './schema.js';
 import {
   fetchAvailableMonthBounds,
-  fetchContractsForMonth,
   fetchCurveShare,
   fetchLatestIngestionStatus,
   insertAuditLog,
@@ -29,6 +27,44 @@ import {
 } from './repository.js';
 import { clampMonthRef, listMonthRefs, normalizeMonthRange, shiftDateByMonths, shiftMonthRef } from './utils.js';
 import { getVendorStats, getVendorStatsForPeriod } from './vendorStats.js';
+
+const createIngestionStatusCache = () => {
+  let promise;
+  return () => {
+    if (!promise) promise = fetchLatestIngestionStatus();
+    return promise;
+  };
+};
+
+const createCurveShareCache = () => {
+  const cache = new Map();
+  return (day, curveId) => {
+    const key = `${curveId}:${day}`;
+    if (!cache.has(key)) cache.set(key, fetchCurveShare(day, curveId));
+    return cache.get(key);
+  };
+};
+
+const createRulesByIdCache = () => {
+  const cache = new Map();
+  return async (rulesVersionId) => {
+    if (!rulesVersionId) return null;
+    if (cache.has(rulesVersionId)) return cache.get(rulesVersionId);
+    const rules = await getRulesVersionById(rulesVersionId);
+    cache.set(rulesVersionId, rules);
+    return rules;
+  };
+};
+
+const createRulesForMonthCache = () => {
+  const cache = new Map();
+  return async (monthRef) => {
+    if (cache.has(monthRef)) return cache.get(monthRef);
+    const rules = await getRulesVersionForDate(startOfMonth(monthRef));
+    cache.set(monthRef, rules);
+    return rules;
+  };
+};
 
 export const buildMonthlySnapshot = async ({
   monthRef,
@@ -48,12 +84,17 @@ export const buildMonthlySnapshot = async ({
     filters
   });
 
+  const getIngestionStatus = createIngestionStatusCache();
+  const getCurveShare = createCurveShareCache();
+  const resolveRulesById = createRulesByIdCache();
+  const resolveRulesForMonth = createRulesForMonthCache();
+
   const monthStart = startOfMonth(monthRef);
-  const overrideRules = rulesOverride || (rulesVersionId ? await getRulesVersionById(rulesVersionId) : null);
+  const overrideRules = rulesOverride || (rulesVersionId ? await resolveRulesById(rulesVersionId) : null);
   if (rulesVersionId && !overrideRules) {
     throw new Error('rules_version_id invalido');
   }
-  const rules = overrideRules || (await getRulesVersionForDate(monthStart));
+  const rules = overrideRules || (await resolveRulesForMonth(monthRef));
   const metaComissao = toReais(rules.meta_global_comissao || 0, SNAPSHOT_MONEY_UNIT);
 
   const rulesVersionToUse = overrideRules ? overrideRules.rules_version_id : null;
@@ -87,13 +128,12 @@ export const buildMonthlySnapshot = async ({
     Date.UTC(yoyMonthEnd.getUTCFullYear(), yoyMonthEnd.getUTCMonth(), Math.min(dayOfMonth, yoyMonthEnd.getUTCDate()))
   );
 
-  const contracts = await fetchContractsForMonth({ monthRef, includeIncomplete: true, filters });
   const [currentAgg, prevAgg, yoyAgg, renewals, dataCoverage, filterOptions, trendDaily] = await Promise.all([
     getMonthlyAggregates({ monthRef, filters, cutoffDate }),
     getMonthlyAggregates({ monthRef: prevMonthRef, filters, cutoffDate: formatDate(prevCutoff) }),
     getMonthlyAggregates({ monthRef: yoyMonthRef, filters, cutoffDate: formatDate(yoyCutoff) }),
     getRenewalMetrics({ referenceDate, vendorId: filters.vendorId, ramo: filters.ramo }),
-    getDataCoverage(monthRef),
+    getDataCoverage(monthRef, { getIngestionStatus }),
     getFilterOptions(monthRef),
     getDailyTrend({ monthRef, filters, referenceDate, days: 14 })
   ]);
@@ -102,12 +142,13 @@ export const buildMonthlySnapshot = async ({
   const premioMtd = currentAgg.premioTotal;
   const margemMedia = currentAgg.margemPct;
   const ticketMedio = currentAgg.ticketMedio;
+  const contractCount = currentAgg.count;
 
-  if (contracts.length === 0) {
+  if (contractCount === 0) {
     logWarn('snapshot', 'Nenhum contrato encontrado para o mes', { month_ref: monthRef });
   } else {
     logInfo('snapshot', 'Contratos carregados', {
-      count: contracts.length,
+      count: contractCount,
       comissao_mtd: Number(comissaoMtd.toFixed(2))
     });
   }
@@ -116,7 +157,7 @@ export const buildMonthlySnapshot = async ({
       month_ref: monthRef
     });
   }
-  const curveShare = await fetchCurveShare(dayOfMonth, config.ingest.defaultCurveId);
+  const curveShare = await getCurveShare(dayOfMonth, config.ingest.defaultCurveId);
   const shareEsperado = curveShare || dayOfMonth / monthEnd.getUTCDate();
   if (!curveShare) {
     logWarn('snapshot', 'Curva historica indisponivel, usando fallback linear', {
@@ -135,10 +176,6 @@ export const buildMonthlySnapshot = async ({
   const gap = Math.max(0, metaComissao - comissaoMtd);
   const gapDiario = diasUteisRestantes > 0 ? gap / diasUteisRestantes : 0;
 
-  const autoComm = contracts
-    .filter((c) => c.ramo === 'AUTO')
-    .reduce((sum, c) => sum + toReaisDb(c.comissao_valor), 0);
-  const autoShare = comissaoMtd > 0 ? autoComm / comissaoMtd : 0;
   const monoprodutoPct = await getCustomersMonoprodutoPct(filters.vendorId || null);
 
   const momComissaoPct = prevAgg.comissaoTotal > 0 ? (comissaoMtd - prevAgg.comissaoTotal) / prevAgg.comissaoTotal : 0;
@@ -161,8 +198,10 @@ export const buildMonthlySnapshot = async ({
   });
 
   const leaderboard = await getLeaderboard(monthRef, scenarioId, filters);
-  const radar = getRadarData(contracts, blackByRamo);
+  const radar = await getRadarDataForMonth({ monthRef, filters, blackByRamo });
   const mix = await getMixData({ monthRef, filters, blackByRamo });
+  const autoItem = mix.products.find((item) => item.ramo === 'AUTO');
+  const autoShare = autoItem ? autoItem.share_comissao : 0;
   const vendorStats = await getVendorStats({
     monthRef,
     filters,
@@ -170,7 +209,7 @@ export const buildMonthlySnapshot = async ({
     diasUteisRestantes,
     renewals
   });
-  const status = await fetchLatestIngestionStatus();
+  const status = await getIngestionStatus();
   logInfo('snapshot', 'Status de ingestao', {
     status: status.status,
     finished_at: status.finishedAt
@@ -247,6 +286,10 @@ export const buildMonthlySnapshot = async ({
 
 export const buildPeriodSnapshot = async ({ startMonth, endMonth, filters = {} }) => {
   const startedAt = Date.now();
+  const getIngestionStatus = createIngestionStatusCache();
+  const getCurveShare = createCurveShareCache();
+  const resolveRulesForMonth = createRulesForMonthCache();
+
   const requestedRange = normalizeMonthRange(startMonth, endMonth);
   const bounds = await fetchAvailableMonthBounds();
   const clampedStart = clampMonthRef(requestedRange.start, bounds.min, bounds.max);
@@ -293,7 +336,7 @@ export const buildPeriodSnapshot = async ({ startMonth, endMonth, filters = {} }
     getPeriodAggregates({ startMonth: prevStart, endMonth: prevEnd, filters, cutoffDate: prevCutoff }),
     getPeriodAggregates({ startMonth: yoyStart, endMonth: yoyEnd, filters, cutoffDate: yoyCutoff }),
     getRenewalMetrics({ referenceDate, vendorId: filters.vendorId, ramo: filters.ramo }),
-    getDataCoverageForPeriod(rangeStart, rangeEnd),
+    getDataCoverageForPeriod(rangeStart, rangeEnd, { getIngestionStatus }),
     getFilterOptionsForPeriod(rangeStart, rangeEnd),
     getDailyTrendForPeriod({ startMonth: rangeStart, endMonth: rangeEnd, filters, referenceDate, days: 14 })
   ]);
@@ -304,13 +347,6 @@ export const buildPeriodSnapshot = async ({ startMonth, endMonth, filters = {} }
     cutoffDate: referenceMonthRef === rangeEnd ? cutoffDate : formatDate(rangeEndDate)
   });
 
-  const rulesCache = new Map();
-  const resolveRulesForMonth = async (monthRef) => {
-    if (rulesCache.has(monthRef)) return rulesCache.get(monthRef);
-    const rules = await getRulesVersionForDate(startOfMonth(monthRef));
-    rulesCache.set(monthRef, rules);
-    return rules;
-  };
   const rulesList = await Promise.all(months.map(resolveRulesForMonth));
   const metaTotal = rulesList.reduce(
     (sum, rules) => sum + toReais(rules.meta_global_comissao || 0, SNAPSHOT_MONEY_UNIT),
@@ -326,7 +362,7 @@ export const buildPeriodSnapshot = async ({ startMonth, endMonth, filters = {} }
   const dayOfMonth = referenceDate.getUTCDate();
   const curveShare =
     referenceMonthRef === rangeEnd
-      ? await fetchCurveShare(dayOfMonth, config.ingest.defaultCurveId)
+      ? await getCurveShare(dayOfMonth, config.ingest.defaultCurveId)
       : null;
   const shareEsperado =
     curveShare || (referenceMonthRef === rangeEnd ? dayOfMonth / rangeEndDate.getUTCDate() : 1);

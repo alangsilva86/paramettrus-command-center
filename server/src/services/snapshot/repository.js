@@ -38,7 +38,11 @@ export const fetchContractsForMonth = async ({ monthRef, includeIncomplete = fal
     ramo: filters.ramo
   });
   const result = await query(
-    `SELECT *
+    `SELECT contract_id,
+            ramo,
+            comissao_valor,
+            premio,
+            seguradora
      FROM contracts_norm
      WHERE ${conditions.join(' AND ')}`,
     params
@@ -311,10 +315,48 @@ export const fetchRadarRamoStatsForPeriod = async ({ startMonth, endMonth, filte
   return result.rows;
 };
 
+export const fetchRadarRamoStatsForMonth = async ({ monthRef, filters = {} }) => {
+  const { conditions, params } = buildContractsFilters({
+    monthRef,
+    includeIncomplete: true,
+    vendorId: filters.vendorId,
+    ramo: filters.ramo
+  });
+  const result = await query(
+    `SELECT ramo,
+            COALESCE(SUM(comissao_valor), 0) AS comissao_total,
+            COALESCE(SUM(premio), 0) AS premio_total,
+            COUNT(DISTINCT contract_id)::int AS contracts_count
+     FROM contracts_norm
+     WHERE ${conditions.join(' AND ')}
+     GROUP BY ramo`,
+    params
+  );
+  return result.rows;
+};
+
 export const fetchRadarInsurerStatsForPeriod = async ({ startMonth, endMonth, filters = {} }) => {
   const { conditions, params } = buildContractsRangeFilters({
     startMonth,
     endMonth,
+    includeIncomplete: true,
+    vendorId: filters.vendorId,
+    ramo: filters.ramo
+  });
+  const result = await query(
+    `SELECT seguradora,
+            COALESCE(SUM(comissao_valor), 0) AS comissao_total
+     FROM contracts_norm
+     WHERE ${conditions.join(' AND ')}
+     GROUP BY seguradora`,
+    params
+  );
+  return result.rows;
+};
+
+export const fetchRadarInsurerStatsForMonth = async ({ monthRef, filters = {} }) => {
+  const { conditions, params } = buildContractsFilters({
+    monthRef,
     includeIncomplete: true,
     vendorId: filters.vendorId,
     ramo: filters.ramo

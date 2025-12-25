@@ -1,4 +1,5 @@
 import { toReaisDb } from './constants.js';
+import { toNumber } from './numbers.js';
 import { fetchMixAggregate, fetchMixAggregateForPeriod } from './repository.js';
 import { monthRefToIndex, shiftMonthRef } from './utils.js';
 
@@ -40,7 +41,7 @@ const mapMixRows = (rows) =>
       ...row,
       comissao_total: toReaisDb(row.comissao_total || 0),
       premio_total: toReaisDb(row.premio_total || 0),
-      contracts_count: Number(row.contracts_count || 0)
+      contracts_count: toNumber(row.contracts_count)
     }));
 
 const getMixAggregate = async ({ monthRef, filters = {}, field }) => {
@@ -62,25 +63,25 @@ export const getMixData = async ({ monthRef, filters = {}, blackByRamo }) => {
     getMixAggregate({ monthRef: prevMonthRef, filters, field: 'seguradora' })
   ]);
 
-  const totalComm = currentProducts.reduce((sum, row) => sum + Number(row.comissao_total || 0), 0);
-  const totalPrem = currentProducts.reduce((sum, row) => sum + Number(row.premio_total || 0), 0);
-  const prevTotalComm = prevProducts.reduce((sum, row) => sum + Number(row.comissao_total || 0), 0);
-  const prevTotalInsComm = prevInsurers.reduce((sum, row) => sum + Number(row.comissao_total || 0), 0);
+  const totalComm = currentProducts.reduce((sum, row) => sum + toNumber(row.comissao_total), 0);
+  const totalPrem = currentProducts.reduce((sum, row) => sum + toNumber(row.premio_total), 0);
+  const prevTotalComm = prevProducts.reduce((sum, row) => sum + toNumber(row.comissao_total), 0);
+  const prevTotalInsComm = prevInsurers.reduce((sum, row) => sum + toNumber(row.comissao_total), 0);
 
   const prevProductMap = new Map(prevProducts.map((row) => [row.key, row]));
   const prevInsurerMap = new Map(prevInsurers.map((row) => [row.key, row]));
 
   const products = currentProducts
     .map((row) => {
-      const comissaoTotal = Number(row.comissao_total || 0);
-      const premioTotal = Number(row.premio_total || 0);
+      const comissaoTotal = toNumber(row.comissao_total);
+      const premioTotal = toNumber(row.premio_total);
       const prev = prevProductMap.get(row.key);
-      const prevComm = Number(prev?.comissao_total || 0);
+      const prevComm = toNumber(prev?.comissao_total);
       const shareComissao = totalComm > 0 ? comissaoTotal / totalComm : 0;
       const sharePremio = totalPrem > 0 ? premioTotal / totalPrem : 0;
       const prevShare = prevTotalComm > 0 ? prevComm / prevTotalComm : 0;
       const momComissaoPct = prevComm > 0 ? (comissaoTotal - prevComm) / prevComm : 0;
-      const count = Number(row.contracts_count || 0);
+      const count = toNumber(row.contracts_count);
       const blackCount = blackByRamo.get(row.key) || 0;
       const riskPct = count > 0 ? blackCount / count : 0;
       return {
@@ -99,10 +100,10 @@ export const getMixData = async ({ monthRef, filters = {}, blackByRamo }) => {
 
   const insurers = currentInsurers
     .map((row) => {
-      const comissaoTotal = Number(row.comissao_total || 0);
-      const premioTotal = Number(row.premio_total || 0);
+      const comissaoTotal = toNumber(row.comissao_total);
+      const premioTotal = toNumber(row.premio_total);
       const prev = prevInsurerMap.get(row.key);
-      const prevComm = Number(prev?.comissao_total || 0);
+      const prevComm = toNumber(prev?.comissao_total);
       const shareComissao = totalComm > 0 ? comissaoTotal / totalComm : 0;
       const prevShare = prevTotalInsComm > 0 ? prevComm / prevTotalInsComm : 0;
       const momComissaoPct = prevComm > 0 ? (comissaoTotal - prevComm) / prevComm : 0;
@@ -138,25 +139,25 @@ export const getMixDataForPeriod = async ({ startMonth, endMonth, filters = {}, 
     getMixAggregateForPeriod({ startMonth: prevStart, endMonth: prevEnd, filters, field: 'seguradora' })
   ]);
 
-  const totalComm = currentProducts.reduce((sum, row) => sum + Number(row.comissao_total || 0), 0);
-  const totalPrem = currentProducts.reduce((sum, row) => sum + Number(row.premio_total || 0), 0);
-  const prevTotalComm = prevProducts.reduce((sum, row) => sum + Number(row.comissao_total || 0), 0);
-  const prevTotalInsComm = prevInsurers.reduce((sum, row) => sum + Number(row.comissao_total || 0), 0);
+  const totalComm = currentProducts.reduce((sum, row) => sum + toNumber(row.comissao_total), 0);
+  const totalPrem = currentProducts.reduce((sum, row) => sum + toNumber(row.premio_total), 0);
+  const prevTotalComm = prevProducts.reduce((sum, row) => sum + toNumber(row.comissao_total), 0);
+  const prevTotalInsComm = prevInsurers.reduce((sum, row) => sum + toNumber(row.comissao_total), 0);
 
   const prevProductMap = new Map(prevProducts.map((row) => [row.key, row]));
   const prevInsurerMap = new Map(prevInsurers.map((row) => [row.key, row]));
 
   const products = currentProducts
     .map((row) => {
-      const comissaoTotal = Number(row.comissao_total || 0);
-      const premioTotal = Number(row.premio_total || 0);
+      const comissaoTotal = toNumber(row.comissao_total);
+      const premioTotal = toNumber(row.premio_total);
       const prev = prevProductMap.get(row.key);
-      const prevComm = Number(prev?.comissao_total || 0);
+      const prevComm = toNumber(prev?.comissao_total);
       const shareComissao = totalComm > 0 ? comissaoTotal / totalComm : 0;
       const sharePremio = totalPrem > 0 ? premioTotal / totalPrem : 0;
       const prevShare = prevTotalComm > 0 ? prevComm / prevTotalComm : 0;
       const momComissaoPct = prevComm > 0 ? (comissaoTotal - prevComm) / prevComm : 0;
-      const count = Number(row.contracts_count || 0);
+      const count = toNumber(row.contracts_count);
       const blackCount = blackByRamo.get(row.key) || 0;
       const riskPct = count > 0 ? blackCount / count : 0;
       return {
@@ -175,10 +176,10 @@ export const getMixDataForPeriod = async ({ startMonth, endMonth, filters = {}, 
 
   const insurers = currentInsurers
     .map((row) => {
-      const comissaoTotal = Number(row.comissao_total || 0);
-      const premioTotal = Number(row.premio_total || 0);
+      const comissaoTotal = toNumber(row.comissao_total);
+      const premioTotal = toNumber(row.premio_total);
       const prev = prevInsurerMap.get(row.key);
-      const prevComm = Number(prev?.comissao_total || 0);
+      const prevComm = toNumber(prev?.comissao_total);
       const shareComissao = totalComm > 0 ? comissaoTotal / totalComm : 0;
       const prevShare = prevTotalInsComm > 0 ? prevComm / prevTotalInsComm : 0;
       const momComissaoPct = prevComm > 0 ? (comissaoTotal - prevComm) / prevComm : 0;

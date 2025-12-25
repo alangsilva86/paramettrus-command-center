@@ -1,5 +1,6 @@
 import { addDays, endOfMonth, formatDate, startOfMonth } from '../../utils/date.js';
 import { toReaisDb } from './constants.js';
+import { toNumber } from './numbers.js';
 import {
   fetchCustomersMonoprodutoTotals,
   fetchCustomersMonoprodutoTotalsForCpfs,
@@ -16,9 +17,8 @@ import {
   fetchVendorCpfs
 } from './repository.js';
 
-export const getMonthlyAggregates = async ({ monthRef, filters = {}, cutoffDate = null } = {}) => {
-  const row = await fetchMonthlyAggregates({ monthRef, filters, cutoffDate });
-  const count = Number(row.count || 0);
+const buildAggregateResult = (row) => {
+  const count = toNumber(row.count);
   const comissaoTotal = toReaisDb(row.comissao_total || 0);
   const premioTotal = toReaisDb(row.premio_total || 0);
   const margemPct = premioTotal > 0 ? (comissaoTotal / premioTotal) * 100 : 0;
@@ -26,22 +26,7 @@ export const getMonthlyAggregates = async ({ monthRef, filters = {}, cutoffDate 
   return { count, comissaoTotal, premioTotal, margemPct, ticketMedio };
 };
 
-export const getPeriodAggregates = async ({ startMonth, endMonth, filters = {}, cutoffDate = null } = {}) => {
-  const row = await fetchPeriodAggregates({ startMonth, endMonth, filters, cutoffDate });
-  const count = Number(row.count || 0);
-  const comissaoTotal = toReaisDb(row.comissao_total || 0);
-  const premioTotal = toReaisDb(row.premio_total || 0);
-  const margemPct = premioTotal > 0 ? (comissaoTotal / premioTotal) * 100 : 0;
-  const ticketMedio = count > 0 ? premioTotal / count : 0;
-  return { count, comissaoTotal, premioTotal, margemPct, ticketMedio };
-};
-
-export const getDailyTrend = async ({ monthRef, filters = {}, referenceDate, days = 14 }) => {
-  const start = addDays(referenceDate, -(days - 1));
-  const startKey = formatDate(start);
-  const endKey = formatDate(referenceDate);
-  const rows = await fetchDailyTrendRowsForMonth({ monthRef, filters, startKey, endKey });
-
+const buildDailyTrendSeries = ({ rows, start, days }) => {
   const map = new Map(
     rows.map((row) => [
       formatDate(row.day),
@@ -59,6 +44,70 @@ export const getDailyTrend = async ({ monthRef, filters = {}, referenceDate, day
     series.push({ date: key, comissao: entry.comissao, premio: entry.premio });
   }
   return series;
+};
+
+const buildCoverage = ({ counts, sources, status }) => {
+  const total = toNumber(counts.total);
+  const invalid = toNumber(counts.invalid);
+  const incomplete = toNumber(counts.incomplete);
+  const valid = Math.max(0, total - invalid);
+  const validPct = total > 0 ? valid / total : 0;
+  const confidence =
+    status.status === 'STALE_DATA' || status.status === 'FAILED'
+      ? 'low'
+      : validPct < 0.9
+      ? 'medium'
+      : 'high';
+
+  return {
+    contracts_total: total,
+    contracts_valid: valid,
+    contracts_invalid: invalid,
+    contracts_incomplete: incomplete,
+    valid_pct: Number(validPct.toFixed(3)),
+    sources: sources.map((row) => ({
+      source: row.source,
+      count: toNumber(row.count)
+    })),
+    last_ingestion_at: status.finishedAt,
+    ingestion_status: status.status,
+    confidence
+  };
+};
+
+const resolveIngestionStatus = (getIngestionStatus) => {
+  if (getIngestionStatus) return getIngestionStatus();
+  return fetchLatestIngestionStatus();
+};
+
+const getDataCoverageBase = async ({ counts, startDate, endDate, getIngestionStatus }) => {
+  const [sources, status] = await Promise.all([
+    fetchDataSources({ startDate, endDate }),
+    resolveIngestionStatus(getIngestionStatus)
+  ]);
+
+  return buildCoverage({ counts, sources, status });
+};
+
+const getFilterOptionsBase = (fetcher, ...args) => fetcher(...args);
+
+export const getMonthlyAggregates = async ({ monthRef, filters = {}, cutoffDate = null } = {}) => {
+  const row = await fetchMonthlyAggregates({ monthRef, filters, cutoffDate });
+  return buildAggregateResult(row);
+};
+
+export const getPeriodAggregates = async ({ startMonth, endMonth, filters = {}, cutoffDate = null } = {}) => {
+  const row = await fetchPeriodAggregates({ startMonth, endMonth, filters, cutoffDate });
+  return buildAggregateResult(row);
+};
+
+export const getDailyTrend = async ({ monthRef, filters = {}, referenceDate, days = 14 }) => {
+  const start = addDays(referenceDate, -(days - 1));
+  const startKey = formatDate(start);
+  const endKey = formatDate(referenceDate);
+  const rows = await fetchDailyTrendRowsForMonth({ monthRef, filters, startKey, endKey });
+
+  return buildDailyTrendSeries({ rows, start, days });
 };
 
 export const getDailyTrendForPeriod = async ({
@@ -79,117 +128,53 @@ export const getDailyTrendForPeriod = async ({
     endKey
   });
 
-  const map = new Map(
-    rows.map((row) => [
-      formatDate(row.day),
-      {
-        comissao: toReaisDb(row.comissao_total || 0),
-        premio: toReaisDb(row.premio_total || 0)
-      }
-    ])
-  );
-  const series = [];
-  for (let i = 0; i < days; i += 1) {
-    const day = addDays(start, i);
-    const key = formatDate(day);
-    const entry = map.get(key) || { comissao: 0, premio: 0 };
-    series.push({ date: key, comissao: entry.comissao, premio: entry.premio });
-  }
-  return series;
+  return buildDailyTrendSeries({ rows, start, days });
 };
 
-export const getDataCoverage = async (monthRef) => {
+export const getDataCoverage = async (monthRef, { getIngestionStatus } = {}) => {
   const counts = await fetchDataCoverageCountsForMonth(monthRef);
   const monthStart = startOfMonth(monthRef);
   const monthEnd = endOfMonth(monthRef);
-  const sources = await fetchDataSources({
+  return getDataCoverageBase({
+    counts,
     startDate: monthStart,
-    endDate: addDays(monthEnd, 1)
+    endDate: addDays(monthEnd, 1),
+    getIngestionStatus
   });
-  const status = await fetchLatestIngestionStatus();
-  const total = Number(counts.total || 0);
-  const invalid = Number(counts.invalid || 0);
-  const incomplete = Number(counts.incomplete || 0);
-  const valid = Math.max(0, total - invalid);
-  const validPct = total > 0 ? valid / total : 0;
-  const confidence =
-    status.status === 'STALE_DATA' || status.status === 'FAILED'
-      ? 'low'
-      : validPct < 0.9
-      ? 'medium'
-      : 'high';
-
-  return {
-    contracts_total: total,
-    contracts_valid: valid,
-    contracts_invalid: invalid,
-    contracts_incomplete: incomplete,
-    valid_pct: Number(validPct.toFixed(3)),
-    sources: sources.map((row) => ({
-      source: row.source,
-      count: Number(row.count || 0)
-    })),
-    last_ingestion_at: status.finishedAt,
-    ingestion_status: status.status,
-    confidence
-  };
 };
 
-export const getDataCoverageForPeriod = async (startMonth, endMonth) => {
+export const getDataCoverageForPeriod = async (startMonth, endMonth, { getIngestionStatus } = {}) => {
   const counts = await fetchDataCoverageCountsForPeriod(startMonth, endMonth);
   const rangeStart = startOfMonth(startMonth);
   const rangeEnd = endOfMonth(endMonth);
-  const sources = await fetchDataSources({
+  return getDataCoverageBase({
+    counts,
     startDate: rangeStart,
-    endDate: addDays(rangeEnd, 1)
+    endDate: addDays(rangeEnd, 1),
+    getIngestionStatus
   });
-  const status = await fetchLatestIngestionStatus();
-  const total = Number(counts.total || 0);
-  const invalid = Number(counts.invalid || 0);
-  const incomplete = Number(counts.incomplete || 0);
-  const valid = Math.max(0, total - invalid);
-  const validPct = total > 0 ? valid / total : 0;
-  const confidence =
-    status.status === 'STALE_DATA' || status.status === 'FAILED'
-      ? 'low'
-      : validPct < 0.9
-      ? 'medium'
-      : 'high';
-
-  return {
-    contracts_total: total,
-    contracts_valid: valid,
-    contracts_invalid: invalid,
-    contracts_incomplete: incomplete,
-    valid_pct: Number(validPct.toFixed(3)),
-    sources: sources.map((row) => ({
-      source: row.source,
-      count: Number(row.count || 0)
-    })),
-    last_ingestion_at: status.finishedAt,
-    ingestion_status: status.status,
-    confidence
-  };
 };
 
 export const getFilterOptions = async (monthRef) => {
-  return fetchFilterOptionsForMonth(monthRef);
+  return getFilterOptionsBase(fetchFilterOptionsForMonth, monthRef);
 };
 
 export const getFilterOptionsForPeriod = async (startMonth, endMonth) => {
-  return fetchFilterOptionsForPeriod(startMonth, endMonth);
+  return getFilterOptionsBase(fetchFilterOptionsForPeriod, startMonth, endMonth);
 };
 
 export const getCustomersMonoprodutoPct = async (vendorId = null) => {
   if (!vendorId) {
     const result = await fetchCustomersMonoprodutoTotals();
-    const { total, mono } = result;
+    const total = toNumber(result.total);
+    const mono = toNumber(result.mono);
     return total > 0 ? mono / total : 0;
   }
 
   const cpfList = await fetchVendorCpfs(vendorId);
   if (!cpfList.length) return 0;
   const result = await fetchCustomersMonoprodutoTotalsForCpfs(cpfList);
-  const { total, mono } = result;
+  const total = toNumber(result.total);
+  const mono = toNumber(result.mono);
   return total > 0 ? mono / total : 0;
 };

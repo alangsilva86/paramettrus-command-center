@@ -1,4 +1,5 @@
 import { endOfMonth, formatMonthRef, startOfMonth } from '../../utils/date.js';
+import { shiftMonthRef } from '../../utils/monthRef.js';
 
 /**
  * @typedef {Object} BackfillRange
@@ -6,17 +7,6 @@ import { endOfMonth, formatMonthRef, startOfMonth } from '../../utils/date.js';
  * @property {Date} start
  * @property {Date} end
  */
-
-/**
- * @param {string} monthRef
- * @param {number} deltaMonths
- * @returns {string}
- */
-export const shiftMonthRef = (monthRef, deltaMonths) => {
-  const [year, month] = monthRef.split('-').map(Number);
-  const shifted = new Date(Date.UTC(year, month - 1 + deltaMonths, 1));
-  return formatMonthRef(shifted);
-};
 
 /**
  * @param {Date} start

@@ -1,4 +1,5 @@
 import { isSnapshotVersionCompatible } from './constants.js';
+import { toNumber } from './numbers.js';
 import { fetchSnapshotCached } from './repository.js';
 
 export const compareSnapshots = async ({ monthRef, scenarioId }) => {
@@ -19,7 +20,7 @@ export const compareSnapshots = async ({ monthRef, scenarioId }) => {
   ];
   const kpisDelta = {};
   deltaFields.forEach((field) => {
-    kpisDelta[field] = Number(scenario.kpis?.[field] || 0) - Number(base.kpis?.[field] || 0);
+    kpisDelta[field] = toNumber(scenario.kpis?.[field]) - toNumber(base.kpis?.[field]);
   });
 
   const baseRanks = new Map((base.leaderboard || []).map((row, idx) => [row.vendedor_id, idx + 1]));
@@ -56,7 +57,7 @@ export const compareSnapshots = async ({ monthRef, scenarioId }) => {
   const mixKeys = new Set([...baseMixMap.keys(), ...scenarioMixMap.keys()]);
   const mix = Array.from(mixKeys).map((ramo) => ({
     ramo,
-    share_delta: Number(scenarioMixMap.get(ramo) || 0) - Number(baseMixMap.get(ramo) || 0)
+    share_delta: toNumber(scenarioMixMap.get(ramo)) - toNumber(baseMixMap.get(ramo))
   }));
 
   return {

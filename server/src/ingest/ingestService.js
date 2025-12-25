@@ -4,6 +4,7 @@ import { normalizeZohoRecord } from './normalize.js';
 import { fetchZohoReport, withRetry } from './zohoClient.js';
 import { addDays, endOfMonth, formatDate, startOfMonth, toDateOnly } from '../utils/date.js';
 import { logError, logInfo, logSuccess, logWarn } from '../utils/logger.js';
+import { listMonthRefs, normalizeMonthRange } from '../utils/monthRef.js';
 import {
   insertIngestionRun,
   finalizeIngestionRun,
@@ -30,30 +31,6 @@ const buildRangeCriteria = (fields, start, end) => {
   if (!clauses.length) return null;
   if (clauses.length === 1) return clauses[0];
   return `(${clauses.join(' || ')})`;
-};
-
-const monthRefToIndex = (monthRef) => {
-  const [year, month] = monthRef.split('-').map(Number);
-  return year * 12 + (month - 1);
-};
-
-const normalizeMonthRange = (startMonth, endMonth) => {
-  if (monthRefToIndex(startMonth) <= monthRefToIndex(endMonth)) {
-    return { start: startMonth, end: endMonth };
-  }
-  return { start: endMonth, end: startMonth };
-};
-
-const listMonthRefs = (startMonth, endMonth) => {
-  const startIdx = monthRefToIndex(startMonth);
-  const endIdx = monthRefToIndex(endMonth);
-  const months = [];
-  for (let idx = startIdx; idx <= endIdx; idx += 1) {
-    const year = Math.floor(idx / 12);
-    const month = String((idx % 12) + 1).padStart(2, '0');
-    months.push(`${year}-${month}`);
-  }
-  return months;
 };
 
 const buildMonthRanges = (startMonth, endMonth) => {
