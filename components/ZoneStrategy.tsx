@@ -65,7 +65,15 @@ const ZoneStrategy: React.FC<ZoneStrategyProps> = ({ data, crossSell }) => {
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 h-full">
       
       {/* Widget F: Radar Bubble Chart (Product Mix) */}
-      <WidgetCard title="Radar de Mix (Estratégia)" className="lg:col-span-2">
+      <WidgetCard
+        title={
+          <InfoTooltip
+            label="Radar de Mix"
+            description="Cada bolha cruza comissão (eixo X), margem média (%) (eixo Y) e prêmio (tamanho); cores destacam AUTO vs outros para orientar diversificação."
+          />
+        }
+        className="lg:col-span-2"
+      >
         <div className="w-full h-[220px] min-h-[220px] min-w-[260px]">
           <ResponsiveContainer width="100%" height="100%" minWidth={260} minHeight={220}>
             <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 10 }}>
@@ -120,7 +128,15 @@ const ZoneStrategy: React.FC<ZoneStrategyProps> = ({ data, crossSell }) => {
       </WidgetCard>
 
       {/* Widget G: Monoculture & Pareto */}
-      <WidgetCard title="Risco de Carteira" alert={isMonocultureRisk}>
+      <WidgetCard
+        title={
+          <InfoTooltip
+            label="Risco de Carteira"
+            description="Mostra concentração em AUTO (barra superior) e o share da seguradora líder; alerta causada quando o mix supera o limiar de risco."
+          />
+        }
+        alert={isMonocultureRisk}
+      >
         <div className="flex flex-col justify-center h-full gap-4">
           
           {/* Monoculture Bar */}
@@ -160,7 +176,15 @@ const ZoneStrategy: React.FC<ZoneStrategyProps> = ({ data, crossSell }) => {
       </WidgetCard>
 
       {/* Widget H: Mix por Produto */}
-      <WidgetCard title="Mix por Produto" className="lg:col-span-1">
+      <WidgetCard
+        title={
+          <InfoTooltip
+            label="Mix por Produto"
+            description="Ordena produtos pelo share de comissão e mostra variação MoM + risco associado para priorizar ramos."
+          />
+        }
+        className="lg:col-span-1"
+      >
         <div className="flex flex-col gap-2 text-xs text-gray-300">
           {mix.products.slice(0, 6).map((item) => (
             <div key={item.ramo} className="border-b border-param-border pb-2">
@@ -180,7 +204,15 @@ const ZoneStrategy: React.FC<ZoneStrategyProps> = ({ data, crossSell }) => {
       </WidgetCard>
 
       {/* Widget I: Mix por Seguradora */}
-      <WidgetCard title="Mix por Seguradora" className="lg:col-span-2">
+      <WidgetCard
+        title={
+          <InfoTooltip
+            label="Mix por Seguradora"
+            description="Lista seguradoras, compartilhamentos de comissão e margens, e como cada uma evoluiu MoM."
+          />
+        }
+        className="lg:col-span-2"
+      >
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs text-gray-300">
           {mix.insurers.map((item) => (
             <div key={item.seguradora} className="border-b border-param-border pb-2">

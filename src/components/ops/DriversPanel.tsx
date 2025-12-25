@@ -1,7 +1,7 @@
 import React from 'react';
 import { DashboardSnapshot } from '../../../types';
 import { formatCurrencyBRL } from '../../../utils/format';
-import { Card } from '../ui';
+import { Card, InfoTooltip } from '../ui';
 
 interface DriversPanelProps {
   snapshot: DashboardSnapshot | null;
@@ -21,7 +21,14 @@ const buildInsight = (label: string, delta: number, comparisonLabel: string) => 
 const DriversPanel: React.FC<DriversPanelProps> = ({ snapshot, isRange = false }) => {
   if (!snapshot) {
     return (
-      <Card title="Drivers do Negócio">
+      <Card
+        title={
+          <InfoTooltip
+            label="Drivers do Negócio"
+            description="Mostra os quatro principais motores de evolução (prêmio, margem, ticket e comissão) e seus deltas MoM/Período para priorizar ações."
+          />
+        }
+      >
         <p className="text-xs text-[var(--muted)] italic">Carregando drivers...</p>
       </Card>
     );
@@ -66,7 +73,14 @@ const DriversPanel: React.FC<DriversPanelProps> = ({ snapshot, isRange = false }
   ];
 
   return (
-    <Card title="Drivers do Negócio">
+    <Card
+      title={
+        <InfoTooltip
+          label="Drivers do Negócio"
+          description="Mostra os quatro principais motores de evolução (prêmio, margem, ticket e comissão) e seus deltas MoM/Período para priorizar ações."
+        />
+      }
+    >
       <div className="text-[10px] text-[var(--muted)] mb-3">{driverSummary}</div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {cards.map((card) => (

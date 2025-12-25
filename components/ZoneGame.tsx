@@ -3,6 +3,7 @@ import { LeaderboardEntry, VendorStat } from '../types';
 import WidgetCard from './WidgetCard';
 import { Trophy, Shield, Flame, Crosshair } from 'lucide-react';
 import { formatCurrencyBRL } from '../utils/format';
+import InfoTooltip from '../src/components/ui/InfoTooltip';
 
 interface ZoneGameProps {
   leaderboard: LeaderboardEntry[];
@@ -104,7 +105,12 @@ const ZoneGame: React.FC<ZoneGameProps> = ({
       
       {/* Widget D: XP Ledger Leaderboard */}
       <WidgetCard
-        title="Leaderboard de Performance"
+        title={
+          <InfoTooltip
+            label="Leaderboard de Performance"
+            description="Rankeia vendedores por XP ou comissão (escolha o filtro) e mostra barras de progresso com destaque para o topo e variação vs período anterior."
+          />
+        }
         className="md:col-span-2 overflow-hidden"
         action={
           <div className="flex gap-2 text-[10px]">
@@ -209,7 +215,14 @@ const ZoneGame: React.FC<ZoneGameProps> = ({
       </WidgetCard>
 
       {/* Widget E: Foco do Vendedor */}
-      <WidgetCard title="Foco do Vendedor">
+      <WidgetCard
+        title={
+          <InfoTooltip
+            label="Foco do Vendedor"
+            description="Detalha o vendedor selecionado: crescimento, gaps financeiros e oportunidades prioritárias para acompanhar ações."
+          />
+        }
+      >
         {activeStats ? (
           <div className="flex flex-col gap-3 text-xs text-gray-300">
             <div>
@@ -229,7 +242,14 @@ const ZoneGame: React.FC<ZoneGameProps> = ({
               </div>
             </div>
             <div className="border-t border-param-border pt-3">
-              <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-2">Top Oportunidades</div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] uppercase tracking-widest text-gray-500 mb-2">Top Oportunidades</span>
+                  <InfoTooltip
+                    description="Contratos com maior impacto financeiro e proximidade do vencimento para priorizar follow-up."
+                  />
+                </div>
+              </div>
               <div className="space-y-2 max-h-40 overflow-y-auto pr-2 brutal-scroll">
                 {activeStats.top_opportunities.map((item) => (
                   <div key={item.contract_id} className="border-b border-param-border pb-1">

@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { X } from 'lucide-react';
 import { DataQualityExceptionItem, DataQualityExceptionSummary } from '../../types/ops';
 import { formatCurrencyBRL } from '../../../utils/format';
-import { Button, Card, Input, Table } from '../ui';
+import { Button, Card, Input, Table, InfoTooltip } from '../ui';
 
 interface ExceptionsDrawerProps {
   open: boolean;
@@ -59,9 +59,14 @@ const ExceptionsDrawer: React.FC<ExceptionsDrawerProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/60">
       <div className="w-full max-w-3xl h-full bg-param-card border-l border-param-border shadow-[0_20px_50px_rgba(0,0,0,0.45)] p-5 overflow-y-auto">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-4">
           <div>
-            <div className="text-[10px] uppercase tracking-widest text-white/60">Exceções de Dados</div>
+            <div className="flex items-center gap-1 text-[10px] uppercase tracking-widest text-white/60">
+              <span>Exceções de Dados</span>
+              <InfoTooltip
+                description="Resumo das falhas de qualidade que distorcem decisões; cada carta mostra impacto estimado e permite navegar para os contratos afetados."
+              />
+            </div>
             <div className="text-lg font-bold text-white">Corrigir o que quebra decisões</div>
           </div>
           <button
@@ -110,7 +115,15 @@ const ExceptionsDrawer: React.FC<ExceptionsDrawerProps> = ({
           )}
         </div>
 
-        <Card title="Detalhamento" className="mt-6">
+        <Card
+          title={
+            <InfoTooltip
+              label="Detalhamento"
+              description="Lista os contratos da exceção selecionada com impacto financeiro e permite aplicar filtros e carregar mais itens."
+            />
+          }
+          className="mt-6"
+        >
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <p className="text-[10px] uppercase tracking-[0.3em] text-[var(--muted)]">Tipo selecionado</p>
