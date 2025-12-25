@@ -33,3 +33,25 @@ The middleware lives in `server/` and is deployed separately (Railway).
 The frontend will proxy `/api` to `http://localhost:4000` by default.
 
 To enable contract links in the UI, set `VITE_ZOHO_CONTRACT_URL` (e.g. a base URL ending with `/` that accepts the `contract_id`).
+
+## Exporting Zoho contracts
+
+When you need to pull the raw Zoho report in bulk (more than 1 000 rows) you can use the provided pagination script:
+
+1. Export the required credentials and report identifiers:
+   ```bash
+   export ZOHO_REFRESH_TOKEN="…"
+   export ZOHO_CLIENT_ID="…"
+   export ZOHO_CLIENT_SECRET="…"
+   export CREATOR_OWNER="corretora_paramettrus"
+   export CREATOR_APP="paramettrus"
+   export CREATOR_REPORT="Contratos_Report"
+   export PAGE_SIZE=500 # optional
+   ```
+2. Run the script from the repository root:
+   ```bash
+   bash scripts/dump_creator.sh
+   ```
+3. The script loops `from += limit` until a page returns zero rows, saving the aggregated payload as `contratos_dump.json`. If the access token expires mid-stream, rerun the script after refreshing the token value.
+
+The exported JSON is an array of contracts; you can adapt the tail-end `python3` snippet inside the script if you prefer JSONL or to stream directly into another datastore. Use smaller `PAGE_SIZE` values (200–300) if you encounter timeouts or rate limits, and always keep the script’s `sleep` to avoid Zoho throttling.

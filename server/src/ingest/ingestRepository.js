@@ -2,6 +2,7 @@ import { sha256 } from '../utils/hash.js';
 
 const normalizedColumns = [
   'contract_id',
+  'zoho_record_id',
   'cpf_cnpj',
   'segurado_nome',
   'vendedor_id',
@@ -14,6 +15,7 @@ const normalizedColumns = [
   'termino',
   'added_time',
   'modified_time',
+  'zoho_modified_time',
   'status',
   'premio',
   'comissao_pct',
@@ -31,6 +33,7 @@ const normalizedColumns = [
 const buildNormalizedValues = (contract) => {
   const values = [
     contract.contract_id,
+    contract.zoho_record_id || null,
     contract.cpf_cnpj,
     contract.segurado_nome,
     contract.vendedor_id,
@@ -43,6 +46,7 @@ const buildNormalizedValues = (contract) => {
     contract.termino,
     contract.added_time,
     contract.modified_time,
+    contract.zoho_modified_time,
     contract.status,
     contract.premio,
     contract.comissao_pct,
@@ -170,30 +174,63 @@ export const upsertRawPayload = async ({
   return { inserted: 0, updated: 1, skipped: 0 };
 };
 
-export const getExistingRowInfo = async (client, contractId) => {
-  const result = await client.query(
-    'SELECT row_hash, vendedor_id, modified_time, added_time FROM contracts_norm WHERE contract_id = $1 LIMIT 1',
-    [contractId]
-  );
-  if (result.rowCount === 0) return null;
-  return {
-    rowHash: result.rows[0].row_hash,
-    vendedorId: result.rows[0].vendedor_id,
-    modifiedTime: result.rows[0].modified_time,
-    addedTime: result.rows[0].added_time
-  };
+export const getExistingRowInfo = async (client, { contractId, zohoRecordId } = {}) => {
+  const columns = [
+    'contract_id',
+    'row_hash',
+    'vendedor_id',
+    'modified_time',
+    'added_time',
+    'zoho_record_id',
+    'zoho_modified_time'
+  ].join(', ');
+
+  const queries = [];
+  if (zohoRecordId) {
+    queries.push({
+      text: `SELECT ${columns} FROM contracts_norm WHERE zoho_record_id = $1 LIMIT 1`,
+      values: [zohoRecordId]
+    });
+  }
+  if (contractId) {
+    queries.push({
+      text: `SELECT ${columns} FROM contracts_norm WHERE contract_id = $1 LIMIT 1`,
+      values: [contractId]
+    });
+  }
+
+  for (const queryConfig of queries) {
+    const result = await client.query(queryConfig.text, queryConfig.values);
+    if (result.rowCount === 0) continue;
+    const row = result.rows[0];
+    return {
+      contractId: row.contract_id,
+      rowHash: row.row_hash,
+      vendedorId: row.vendedor_id,
+      modifiedTime: row.modified_time,
+      addedTime: row.added_time,
+      zohoRecordId: row.zoho_record_id,
+      zohoModifiedTime: row.zoho_modified_time
+    };
+  }
+  return null;
 };
 
 export const resolveTimestamp = (record) => {
-  const value =
-    record?.modified_time ??
-    record?.modifiedTime ??
-    record?.added_time ??
-    record?.addedTime ??
-    null;
-  if (!value) return null;
-  const ts = new Date(value).getTime();
-  return Number.isNaN(ts) ? null : ts;
+  const candidates = [
+    record?.zoho_modified_time,
+    record?.zohoModifiedTime,
+    record?.modified_time,
+    record?.modifiedTime,
+    record?.added_time,
+    record?.addedTime
+  ];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const ts = new Date(candidate).getTime();
+    if (!Number.isNaN(ts)) return ts;
+  }
+  return null;
 };
 
 export const isIncomingNewer = (incoming, existing) => {

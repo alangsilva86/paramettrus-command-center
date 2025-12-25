@@ -30,6 +30,8 @@ CREATE TABLE IF NOT EXISTS contracts_norm (
   comissao_valor NUMERIC(14,0), -- stored in centavos
   added_time TIMESTAMPTZ,
   modified_time TIMESTAMPTZ,
+  zoho_record_id TEXT,
+  zoho_modified_time TIMESTAMPTZ,
   row_hash TEXT NOT NULL,
   dedup_group TEXT NOT NULL,
   is_synthetic_id BOOLEAN NOT NULL DEFAULT FALSE,
@@ -45,10 +47,13 @@ ALTER TABLE contracts_norm ADD COLUMN IF NOT EXISTS added_time TIMESTAMPTZ;
 ALTER TABLE contracts_norm ADD COLUMN IF NOT EXISTS modified_time TIMESTAMPTZ;
 ALTER TABLE contracts_norm ADD COLUMN IF NOT EXISTS quality_flags TEXT[];
 ALTER TABLE contracts_norm ADD COLUMN IF NOT EXISTS needs_review BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE contracts_norm ADD COLUMN IF NOT EXISTS zoho_record_id TEXT;
+ALTER TABLE contracts_norm ADD COLUMN IF NOT EXISTS zoho_modified_time TIMESTAMPTZ;
 
 CREATE INDEX IF NOT EXISTS idx_contracts_norm_month ON contracts_norm (month_ref);
 CREATE INDEX IF NOT EXISTS idx_contracts_norm_rowhash ON contracts_norm (row_hash, month_ref);
 CREATE INDEX IF NOT EXISTS idx_contracts_norm_cpf ON contracts_norm (cpf_cnpj);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_contracts_norm_zoho_record ON contracts_norm (zoho_record_id);
 
 -- 2.4.3 customers
 CREATE TABLE IF NOT EXISTS customers (

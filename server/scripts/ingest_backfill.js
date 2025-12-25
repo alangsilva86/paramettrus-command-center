@@ -149,13 +149,6 @@ const run = async () => {
           fetchedCount += records.length;
 
           for (const record of records) {
-            const contractId = record.ID || record.id || null;
-            if (contractId && seenIds.has(contractId)) {
-              duplicatesCount += 1;
-              continue;
-            }
-            if (contractId) seenIds.add(contractId);
-
             const normalized = normalizeZohoRecord(record);
             if (!normalized.month_ref) {
               invalidCount += 1;
@@ -163,6 +156,13 @@ const run = async () => {
             }
             if (normalized.is_incomplete) incompleteCount += 1;
             if (normalized.is_invalid) invalidCount += 1;
+
+            const dedupKey = normalized.zoho_record_id || normalized.contract_id;
+            if (dedupKey && seenIds.has(dedupKey)) {
+              duplicatesCount += 1;
+              continue;
+            }
+            if (dedupKey) seenIds.add(dedupKey);
 
             if (dryRun) continue;
 
@@ -186,11 +186,16 @@ const run = async () => {
               }
             }
 
-            const existing = await getExistingRowInfo(client, normalized.contract_id);
+            const existing = await getExistingRowInfo(client, {
+              contractId: normalized.contract_id,
+              zohoRecordId: normalized.zoho_record_id
+            });
+            if (existing) {
+              normalized.contract_id = existing.contractId;
+            }
             const normalizedTs = resolveTimestamp(normalized);
             const existingTs = resolveTimestamp(existing);
-            const needsModifiedUpdate =
-              normalizedTs && (!existingTs || normalizedTs > existingTs);
+            const needsModifiedUpdate = existing && normalizedTs && (!existingTs || normalizedTs > existingTs);
             const needsVendorUpdate = existing && (!existing.vendedorId || existing.vendedorId === '');
             if (existing && existing.rowHash === normalized.row_hash && !needsVendorUpdate && !needsModifiedUpdate) {
               duplicatesCount += 1;

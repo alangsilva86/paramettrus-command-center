@@ -137,8 +137,10 @@ export const normalizeZohoRecord = (record) => {
     qualityFlags.push('comissao_pct_high');
   }
 
+  const zohoRecordId = rawContractId ? String(rawContractId) : null;
   const normalized = {
     contract_id: contractId,
+    zoho_record_id: zohoRecordId,
     cpf_cnpj: cpfCnpj,
     segurado_nome: seguradoNome,
     vendedor_id: vendedorId,
@@ -151,6 +153,7 @@ export const normalizeZohoRecord = (record) => {
     termino: terminoISO,
     added_time: addedTime,
     modified_time: modifiedTime,
+    zoho_modified_time: modifiedTime,
     status: statusNormalized,
     premio,
     comissao_pct: comissaoPctValue,

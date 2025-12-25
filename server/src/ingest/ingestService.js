@@ -25,6 +25,13 @@ const buildCriteria = (field, start, end) => {
   return `(${field} >= "${start}" && ${field} <= "${end}")`;
 };
 
+const buildRangeCriteria = (fields, start, end) => {
+  const clauses = fields.map((field) => buildCriteria(field, start, end)).filter(Boolean);
+  if (!clauses.length) return null;
+  if (clauses.length === 1) return clauses[0];
+  return `(${clauses.join(' || ')})`;
+};
+
 const monthRefToIndex = (monthRef) => {
   const [year, month] = monthRef.split('-').map(Number);
   return year * 12 + (month - 1);
@@ -153,34 +160,34 @@ export const refreshZohoPeriod = async ({
   logInfo('ingest', 'Refresh de periodo iniciado', {
     start: normalized.start,
     end: normalized.end,
-    criteria_fields: criteriaFields
+    criteria_fields: criteriaFields,
+    include_inicio: includeInicio
   });
 
   return withClient(async (client) => {
-    const startedAt = new Date();
-    const runId = await insertIngestionRun(client, startedAt);
-    let fetchedCount = 0;
-    let insertedNormCount = 0;
-    let updatedNormCount = 0;
-    let duplicatesCount = 0;
-    let invalidCount = 0;
-    let incompleteCount = 0;
-    let rawInserted = 0;
-    let rawUpdated = 0;
-    let rawSkipped = 0;
-    const seenIds = new Set();
-    const fetchedAt = new Date().toISOString();
-    const touchedCpfs = [];
+      const startedAt = new Date();
+      const runId = await insertIngestionRun(client, startedAt);
+      let fetchedCount = 0;
+      let insertedNormCount = 0;
+      let updatedNormCount = 0;
+      let duplicatesCount = 0;
+      let invalidCount = 0;
+      let incompleteCount = 0;
+      let rawInserted = 0;
+      let rawUpdated = 0;
+      let rawSkipped = 0;
+      const seenIds = new Set();
+      const fetchedAt = new Date().toISOString();
+      const touchedCpfs = [];
 
-    try {
-      for (const range of ranges) {
-        const startKey = formatDate(range.start);
-        const endKey = formatDate(range.end);
-        for (const field of criteriaFields) {
-          const criteria = buildCriteria(field, startKey, endKey);
+      try {
+        for (const range of ranges) {
+          const startKey = formatDate(range.start);
+          const endKey = formatDate(range.end);
+          const criteria = buildRangeCriteria(criteriaFields, startKey, endKey);
+          if (!criteria) continue;
           logInfo('ingest', 'Refresh periodo janela', {
             month_ref: range.monthRef,
-            field,
             criteria
           });
 
@@ -192,13 +199,6 @@ export const refreshZohoPeriod = async ({
           fetchedCount += records.length;
 
           for (const record of records) {
-            const contractId = record.ID || record.id || null;
-            if (contractId && seenIds.has(contractId)) {
-              duplicatesCount += 1;
-              continue;
-            }
-            if (contractId) seenIds.add(contractId);
-
             const normalizedRecord = normalizeZohoRecord(record);
             if (!normalizedRecord.month_ref) {
               invalidCount += 1;
@@ -206,6 +206,13 @@ export const refreshZohoPeriod = async ({
             }
             if (normalizedRecord.is_incomplete) incompleteCount += 1;
             if (normalizedRecord.is_invalid) invalidCount += 1;
+
+            const dedupKey = normalizedRecord.zoho_record_id || normalizedRecord.contract_id;
+            if (dedupKey && seenIds.has(dedupKey)) {
+              duplicatesCount += 1;
+              continue;
+            }
+            if (dedupKey) seenIds.add(dedupKey);
 
             const rawResult = await upsertRawPayload({
               client,
@@ -227,11 +234,16 @@ export const refreshZohoPeriod = async ({
               }
             }
 
-            const existing = await getExistingRowInfo(client, normalizedRecord.contract_id);
+            const existing = await getExistingRowInfo(client, {
+              contractId: normalizedRecord.contract_id,
+              zohoRecordId: normalizedRecord.zoho_record_id
+            });
+            if (existing) {
+              normalizedRecord.contract_id = existing.contractId;
+            }
             const normalizedTs = resolveTimestamp(normalizedRecord);
             const existingTs = resolveTimestamp(existing);
-            const needsModifiedUpdate =
-              normalizedTs && (!existingTs || normalizedTs > existingTs);
+            const needsModifiedUpdate = existing && normalizedTs && (!existingTs || normalizedTs > existingTs);
             const needsVendorUpdate = existing && (!existing.vendedorId || existing.vendedorId === '');
             if (
               existing &&
@@ -262,51 +274,50 @@ export const refreshZohoPeriod = async ({
             if (normalizedRecord.cpf_cnpj) touchedCpfs.push(normalizedRecord.cpf_cnpj);
           }
         }
-      }
 
-      await refreshCustomers(client, touchedCpfs);
+        await refreshCustomers(client, touchedCpfs);
 
-      await finalizeIngestionRun(client, runId, {
-        status: 'SUCCESS',
-        finishedAt: new Date(),
-        fetchedCount,
-        insertedNormCount,
-        duplicatesCount,
-        details: {
-          mode: 'period_refresh',
-          start_month: normalized.start,
-          end_month: normalized.end,
-          criteria_fields: criteriaFields,
-          include_inicio: includeInicio,
-          updated_norm_count: updatedNormCount,
-          raw_inserted: rawInserted,
-          raw_updated: rawUpdated,
-          raw_skipped: rawSkipped,
-          invalid_count: invalidCount,
-          incomplete_count: incompleteCount
-        }
-      });
+        await finalizeIngestionRun(client, runId, {
+          status: 'SUCCESS',
+          finishedAt: new Date(),
+          fetchedCount,
+          insertedNormCount,
+          duplicatesCount,
+          details: {
+            mode: 'period_refresh',
+            start_month: normalized.start,
+            end_month: normalized.end,
+            criteria_fields: criteriaFields,
+            include_inicio: includeInicio,
+            updated_norm_count: updatedNormCount,
+            raw_inserted: rawInserted,
+            raw_updated: rawUpdated,
+            raw_skipped: rawSkipped,
+            invalid_count: invalidCount,
+            incomplete_count: incompleteCount
+          }
+        });
 
-      logSuccess('ingest', 'Refresh de periodo concluido', {
-        start: normalized.start,
-        end: normalized.end,
-        fetched: fetchedCount,
-        inserted: insertedNormCount,
-        updated: updatedNormCount,
-        duplicates: duplicatesCount,
-        invalid: invalidCount,
-        incomplete: incompleteCount
-      });
+        logSuccess('ingest', 'Refresh de periodo concluido', {
+          start: normalized.start,
+          end: normalized.end,
+          fetched: fetchedCount,
+          inserted: insertedNormCount,
+          updated: updatedNormCount,
+          duplicates: duplicatesCount,
+          invalid: invalidCount,
+          incomplete: incompleteCount
+        });
 
-      return {
-        runId,
-        status: 'SUCCESS',
-        fetchedCount,
-        insertedNormCount,
-        updatedNormCount,
-        duplicatesCount
-      };
-    } catch (error) {
+        return {
+          runId,
+          status: 'SUCCESS',
+          fetchedCount,
+          insertedNormCount,
+          updatedNormCount,
+          duplicatesCount
+        };
+      } catch (error) {
       const statusCode = error?.status || error?.response?.status || null;
       const errorCode = error?.code || error?.response?.data?.code || null;
       const detail =
@@ -404,42 +415,47 @@ export const runIngestion = async () => {
       fetchedCount = records.length;
       logInfo('ingest', 'Registros recebidos', { fetched: fetchedCount });
 
-      for (const record of records) {
-        await insertRawPayload({ client, record, fetchedAt, source: SOURCE });
-        const normalized = normalizeZohoRecord(record);
-        if (!normalized.month_ref) {
-          invalidCount += 1;
-          continue;
-        }
-        if (normalized.is_incomplete) incompleteCount += 1;
-        if (normalized.is_invalid) invalidCount += 1;
-
-        const fingerprint = await getLatestByRowHash(client, normalized.row_hash);
-        if (fingerprint && fingerprint.contract_id !== normalized.contract_id) {
-          const incomingNewer = isIncomingNewer(normalized, fingerprint);
-          if (!incomingNewer) {
-            duplicatesCount += 1;
+        for (const record of records) {
+          await insertRawPayload({ client, record, fetchedAt, source: SOURCE });
+          const normalized = normalizeZohoRecord(record);
+          if (!normalized.month_ref) {
+            invalidCount += 1;
             continue;
           }
-        }
+          if (normalized.is_incomplete) incompleteCount += 1;
+          if (normalized.is_invalid) invalidCount += 1;
 
-        const existing = await getExistingRowInfo(client, normalized.contract_id);
-        if (existing) {
-          const needsVendorUpdate = !existing.vendedorId || existing.vendedorId === '';
+          const fingerprint = await getLatestByRowHash(client, normalized.row_hash);
+          if (fingerprint && fingerprint.contract_id !== normalized.contract_id) {
+            const incomingNewer = isIncomingNewer(normalized, fingerprint);
+            if (!incomingNewer) {
+              duplicatesCount += 1;
+              continue;
+            }
+          }
+
+          const existing = await getExistingRowInfo(client, {
+            contractId: normalized.contract_id,
+            zohoRecordId: normalized.zoho_record_id
+          });
+          if (existing) {
+            normalized.contract_id = existing.contractId;
+          }
+          const needsVendorUpdate = existing && (!existing.vendedorId || existing.vendedorId === '');
           const normalizedTs = resolveTimestamp(normalized);
           const existingTs = resolveTimestamp(existing);
-          const needsModifiedUpdate =
-            normalizedTs && (!existingTs || normalizedTs > existingTs);
-          if (existing.rowHash === normalized.row_hash && !needsVendorUpdate && !needsModifiedUpdate) {
+          const needsModifiedUpdate = existing && normalizedTs && (!existingTs || normalizedTs > existingTs);
+          if (existing && existing.rowHash === normalized.row_hash && !needsVendorUpdate && !needsModifiedUpdate) {
             duplicatesCount += 1;
             continue;
           }
-          await updateNormalized(client, normalized);
-          updatedNormCount += 1;
-        } else {
-          await insertNormalized(client, normalized);
-          insertedNormCount += 1;
-        }
+          if (existing) {
+            await updateNormalized(client, normalized);
+            updatedNormCount += 1;
+          } else {
+            await insertNormalized(client, normalized);
+            insertedNormCount += 1;
+          }
 
         if (fingerprint) {
           const removed = await purgeDuplicatesByRowHash(
