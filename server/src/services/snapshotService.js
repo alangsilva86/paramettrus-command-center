@@ -1139,6 +1139,7 @@ export const buildMonthlySnapshot = async ({
     throw new Error('rules_version_id inválido');
   }
   const rules = overrideRules || (await getRulesVersionForDate(monthStart));
+  const metaComissao = toReais(rules.meta_global_comissao || 0, SNAPSHOT_MONEY_UNIT);
 
   const rulesVersionToUse = overrideRules ? overrideRules.rules_version_id : null;
   await computeLedgerForMonth({
@@ -1151,7 +1152,7 @@ export const buildMonthlySnapshot = async ({
 
   logInfo('snapshot', 'Regras aplicadas', {
     rules_version_id: rules.rules_version_id,
-    meta_comissao: Number(rules.meta_global_comissao),
+    meta_comissao: Number(metaComissao.toFixed(2)),
     dias_uteis: Number(rules.dias_uteis)
   });
 
@@ -1217,7 +1218,7 @@ export const buildMonthlySnapshot = async ({
 
   const businessDaysElapsed = countBusinessDays(monthStart, referenceDate);
   const diasUteisRestantes = Math.max(0, rules.dias_uteis - businessDaysElapsed);
-  const gap = Math.max(0, rules.meta_global_comissao - comissaoMtd);
+  const gap = Math.max(0, metaComissao - comissaoMtd);
   const gapDiario = diasUteisRestantes > 0 ? gap / diasUteisRestantes : 0;
 
   const autoComm = contracts
@@ -1272,15 +1273,14 @@ export const buildMonthlySnapshot = async ({
     data_coverage: dataCoverage,
     filters: filterOptions,
     kpis: {
-      meta_comissao: Number(rules.meta_global_comissao),
+      meta_comissao: Number(metaComissao.toFixed(2)),
       comissao_mtd: comissaoMtd,
       premio_mtd: premioMtd,
       ticket_medio: ticketMedio,
       margem_media_pct: margemMedia,
-      pct_meta: rules.meta_global_comissao > 0 ? comissaoMtd / rules.meta_global_comissao : 0,
+      pct_meta: metaComissao > 0 ? comissaoMtd / metaComissao : 0,
       forecast_comissao: forecastComissao,
-      forecast_pct_meta:
-        rules.meta_global_comissao > 0 ? forecastComissao / rules.meta_global_comissao : 0,
+      forecast_pct_meta: metaComissao > 0 ? forecastComissao / metaComissao : 0,
       gap_diario: gapDiario,
       auto_share_comissao: autoShare,
       monoproduto_pct: monoprodutoPct,
@@ -1404,7 +1404,7 @@ export const buildPeriodSnapshot = async ({
   };
   const rulesList = await Promise.all(months.map(resolveRulesForMonth));
   const metaTotal = rulesList.reduce(
-    (sum, rules) => sum + Number(rules.meta_global_comissao || 0),
+    (sum, rules) => sum + toReais(rules.meta_global_comissao || 0, SNAPSHOT_MONEY_UNIT),
     0
   );
   const endMonthRules = await resolveRulesForMonth(rangeEnd);
