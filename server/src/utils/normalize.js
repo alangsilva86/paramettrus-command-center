@@ -17,12 +17,32 @@ export const normalizeCpfCnpj = (value) => {
 export const normalizeMoney = (value) => {
   if (value === null || value === undefined || value === '') return null;
   if (typeof value === 'number' && !Number.isNaN(value)) return Number(value);
-  const normalized = String(value)
-    .replace(/\./g, '')
-    .replace(',', '.')
-    .replace(/[^\d.-]/g, '');
+  const raw = String(value).trim();
+  const negative = raw.startsWith('-');
+  let cleaned = negative ? raw.slice(1) : raw;
+  cleaned = cleaned.replace(/[^\d.,]/g, '');
+  if (!cleaned) return null;
+
+  const lastComma = cleaned.lastIndexOf(',');
+  const lastDot = cleaned.lastIndexOf('.');
+  let normalized = '';
+
+  if (lastComma > lastDot) {
+    const integerPart = cleaned.slice(0, lastComma).replace(/[.,]/g, '');
+    const fractionPart = cleaned.slice(lastComma + 1).replace(/[.,]/g, '');
+    normalized = fractionPart ? `${integerPart || '0'}.${fractionPart}` : `${integerPart || '0'}`;
+  } else if (lastDot > lastComma) {
+    const integerPart = cleaned.slice(0, lastDot).replace(/[.,]/g, '');
+    const fractionPart = cleaned.slice(lastDot + 1).replace(/[.,]/g, '');
+    normalized = fractionPart ? `${integerPart || '0'}.${fractionPart}` : `${integerPart || '0'}`;
+  } else {
+    normalized = cleaned.replace(/[.,]/g, '');
+  }
+
+  if (!normalized) return null;
   const parsed = Number(normalized);
-  return Number.isNaN(parsed) ? null : parsed;
+  if (Number.isNaN(parsed)) return null;
+  return negative ? -Math.abs(parsed) : parsed;
 };
 
 export const normalizeMoneyToDb = (value, options) => {
