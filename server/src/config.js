@@ -49,6 +49,16 @@ export const config = {
     defaultCurveId: process.env.DEFAULT_CURVE_ID || 'curve_default',
     mode: process.env.INGEST_MODE || 'incremental',
     incrementalLookbackDays: Number(process.env.INGEST_INCREMENTAL_LOOKBACK_DAYS || 7),
+    batchSize: Number(process.env.INGEST_BATCH_SIZE || 200),
+    backfillBatchSize: Number(process.env.INGEST_BACKFILL_BATCH_SIZE || 200),
+    concurrency: Number(process.env.INGEST_CONCURRENCY || 4),
+    backfillConcurrency: Number(process.env.INGEST_BACKFILL_CONCURRENCY || 4),
+    retryAttempts: Number(process.env.INGEST_RETRY_ATTEMPTS || 3),
+    retryTimeoutMs: Number(process.env.INGEST_RETRY_TIMEOUT_MS || 60000),
+    circuitBreakerFailureThreshold: Number(
+      process.env.INGEST_CIRCUIT_FAILURE_THRESHOLD || 3
+    ),
+    circuitBreakerCooldownMs: Number(process.env.INGEST_CIRCUIT_COOLDOWN_MS || 30000),
     lockedMonths: (process.env.LOCKED_MONTHS || '')
       .split(',')
       .map((v) => v.trim())

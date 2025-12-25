@@ -6,7 +6,7 @@ import {
   purgeDuplicatesByRowHash,
   resolveTimestamp,
   updateNormalized
-} from '../ingestRepository.js';
+} from './ingestRepository.js';
 
 const buildExistingInfoFromNormalized = (normalized) => ({
   contractId: normalized.contract_id,
@@ -45,7 +45,7 @@ const updateCachesFromNormalized = (normalized, caches) => {
   }
 };
 
-export const buildBackfillBatchCache = async (client, entries) => {
+export const buildIngestionBatchCache = async (client, entries) => {
   const rowHashes = new Set();
   const contractIds = new Set();
   const zohoRecordIds = new Set();
@@ -72,7 +72,7 @@ export const buildBackfillBatchCache = async (client, entries) => {
 };
 
 /**
- * @typedef {Object} BackfillPersistResult
+ * @typedef {Object} PersistResult
  * @property {number} insertedNorm
  * @property {number} updatedNorm
  * @property {number} duplicates

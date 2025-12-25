@@ -99,49 +99,76 @@ const requestZohoPage = async ({ accessToken, baseUrl, offset, limit, criteria }
   }
 };
 
-export const fetchZohoReport = async ({ limit, maxPages = Infinity, criteria = null } = {}) => {
-  let tokenResult = await getZohoAccessToken();
-  let accessToken = tokenResult.accessToken;
-  let baseDomain = tokenResult.apiDomain || config.zoho.apiDomain;
-  let base = `${baseDomain}/creator/v2.1/data`;
-  let path = '';
-
+const resolveZohoReportPath = () => {
   if (config.zoho.creatorOwner) {
-    path = `${config.zoho.creatorOwner}/${config.zoho.creatorApp}/report/${config.zoho.creatorReport}`;
-  } else if (config.zoho.creatorApp.includes('/')) {
-    path = `${config.zoho.creatorApp}/${config.zoho.creatorReport}`;
-  } else {
-    path = `${config.zoho.creatorApp}/report/${config.zoho.creatorReport}`;
+    return `${config.zoho.creatorOwner}/${config.zoho.creatorApp}/report/${config.zoho.creatorReport}`;
   }
+  if (config.zoho.creatorApp.includes('/')) {
+    return `${config.zoho.creatorApp}/${config.zoho.creatorReport}`;
+  }
+  return `${config.zoho.creatorApp}/report/${config.zoho.creatorReport}`;
+};
 
-  let baseUrl = `${base}/${path}`;
+const buildZohoReportUrl = (baseDomain, path) => {
+  return `${baseDomain}/creator/v2.1/data/${path}`;
+};
+
+const resolveZohoPageLimit = (limit) => {
   const maxLimit = 500;
-  const pageLimit = Math.min(
-    Number(limit || config.zoho.pageLimit || maxLimit),
-    maxLimit
-  );
+  const requestedLimit = Number(limit || config.zoho.pageLimit || maxLimit);
+  const pageLimit = Math.min(requestedLimit, maxLimit);
   if (pageLimit < 1) {
     throw new Error('ZOHO_PAGE_LIMIT inválido');
   }
-  if (pageLimit !== Number(limit || config.zoho.pageLimit || maxLimit)) {
+  if (pageLimit !== requestedLimit) {
     logWarn('zoho', 'Limit acima do maximo permitido, ajustado para 500', { limit: pageLimit });
   }
+  return pageLimit;
+};
+
+export const streamZohoReport = async function* ({
+  limit,
+  maxPages = Infinity,
+  criteria = null,
+  retryOptions = {}
+} = {}) {
+  let tokenResult = await getZohoAccessToken();
+  let accessToken = tokenResult.accessToken;
+  let baseDomain = tokenResult.apiDomain || config.zoho.apiDomain;
+  const path = resolveZohoReportPath();
+  let baseUrl = buildZohoReportUrl(baseDomain, path);
+
+  const pageLimit = resolveZohoPageLimit(limit);
   logInfo('zoho', 'Buscando dados no Zoho Creator', {
     endpoint: baseUrl,
     limit: pageLimit,
     api_domain: baseDomain,
     criteria: criteria || null
   });
-  const records = [];
+
+  const retryAttempts = Math.max(1, Number(retryOptions.attempts || 3));
+  const retryShould =
+    retryOptions.shouldRetry || ((error) => error?.code !== 'ZOHO_AUTH_401');
+  const timeoutMs =
+    Number(retryOptions.timeoutMs) ||
+    (config.zoho.requestTimeoutMs ? config.zoho.requestTimeoutMs + 5000 : null);
+  const retryConfig = { ...retryOptions, timeoutMs };
+
   let offset = 0;
   let keepGoing = true;
   let refreshed = false;
   let pageCount = 0;
+  let totalCount = 0;
 
   while (keepGoing) {
     let response;
     try {
-      response = await requestZohoPage({ accessToken, baseUrl, offset, limit: pageLimit, criteria });
+      response = await withRetry(
+        () => requestZohoPage({ accessToken, baseUrl, offset, limit: pageLimit, criteria }),
+        retryAttempts,
+        retryShould,
+        retryConfig
+      );
     } catch (error) {
       if (error?.code === 'ZOHO_AUTH_401') {
         if (!refreshed) {
@@ -150,9 +177,13 @@ export const fetchZohoReport = async ({ limit, maxPages = Infinity, criteria = n
           tokenResult = await getZohoAccessToken({ force: true });
           accessToken = tokenResult.accessToken;
           baseDomain = tokenResult.apiDomain || config.zoho.apiDomain;
-          base = `${baseDomain}/creator/v2.1/data`;
-          baseUrl = `${base}/${path}`;
-          response = await requestZohoPage({ accessToken, baseUrl, offset, limit: pageLimit, criteria });
+          baseUrl = buildZohoReportUrl(baseDomain, path);
+          response = await withRetry(
+            () => requestZohoPage({ accessToken, baseUrl, offset, limit: pageLimit, criteria }),
+            retryAttempts,
+            retryShould,
+            retryConfig
+          );
         } else {
           logError('zoho', '401 persistente apos refresh', { offset });
           const authError = new Error('Zoho report unauthorized after refresh');
@@ -176,12 +207,14 @@ export const fetchZohoReport = async ({ limit, maxPages = Infinity, criteria = n
     }
 
     const data = response.data?.data || response.data?.records || [];
-    if (Array.isArray(data)) {
-      records.push(...data);
+    const pageCountValue = Array.isArray(data) ? data.length : 0;
+    if (Array.isArray(data) && data.length) {
+      totalCount += data.length;
+      yield data;
     }
     logInfo('zoho', 'Página recebida', {
       offset,
-      count: Array.isArray(data) ? data.length : 0
+      count: pageCountValue
     });
     pageCount += 1;
     if (pageCount >= maxPages) {
@@ -195,7 +228,14 @@ export const fetchZohoReport = async ({ limit, maxPages = Infinity, criteria = n
     }
   }
 
-  logSuccess('zoho', 'Coleta finalizada', { total: records.length });
+  logSuccess('zoho', 'Coleta finalizada', { total: totalCount });
+};
+
+export const fetchZohoReport = async ({ limit, maxPages = Infinity, criteria = null, retryOptions } = {}) => {
+  const records = [];
+  for await (const page of streamZohoReport({ limit, maxPages, criteria, retryOptions })) {
+    records.push(...page);
+  }
   return records;
 };
 
@@ -208,17 +248,119 @@ export const probeZohoReport = async () => {
   };
 };
 
-export const withRetry = async (fn, attempts = 3, shouldRetry = () => true) => {
+const runWithTimeout = async (fn, timeoutMs) => {
+  const safeTimeout = Number(timeoutMs);
+  if (!safeTimeout || safeTimeout <= 0) return fn();
+  let timeoutId;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      const error = new Error(`Timeout apos ${safeTimeout}ms`);
+      error.code = 'RETRY_TIMEOUT';
+      error.status = 408;
+      reject(error);
+    }, safeTimeout);
+  });
+
+  try {
+    return await Promise.race([fn(), timeoutPromise]);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+};
+
+export const createCircuitBreaker = ({
+  failureThreshold = 3,
+  successThreshold = 1,
+  cooldownMs = 30000
+} = {}) => {
+  let state = 'CLOSED';
+  let failureCount = 0;
+  let successCount = 0;
+  let nextAttemptAt = 0;
+
+  const open = () => {
+    state = 'OPEN';
+    failureCount = 0;
+    successCount = 0;
+    nextAttemptAt = Date.now() + cooldownMs;
+  };
+
+  const close = () => {
+    state = 'CLOSED';
+    failureCount = 0;
+    successCount = 0;
+    nextAttemptAt = 0;
+  };
+
+  return {
+    canRequest: () => {
+      if (state === 'OPEN') {
+        if (Date.now() >= nextAttemptAt) {
+          state = 'HALF_OPEN';
+          return true;
+        }
+        return false;
+      }
+      return true;
+    },
+    recordSuccess: () => {
+      if (state === 'HALF_OPEN') {
+        successCount += 1;
+        if (successCount >= successThreshold) {
+          close();
+        }
+        return;
+      }
+      failureCount = 0;
+    },
+    recordFailure: () => {
+      if (state === 'HALF_OPEN') {
+        open();
+        return;
+      }
+      failureCount += 1;
+      if (failureCount >= failureThreshold) {
+        open();
+      }
+    },
+    getState: () => state,
+    getNextAttemptAt: () => nextAttemptAt
+  };
+};
+
+export const withRetry = async (
+  fn,
+  attempts = 3,
+  shouldRetry = () => true,
+  options = {}
+) => {
+  const { timeoutMs, breaker, onRetry } = options;
   let lastError = null;
   for (let i = 0; i < attempts; i += 1) {
+    if (breaker && breaker.canRequest && !breaker.canRequest()) {
+      const error = new Error('Circuit breaker aberto');
+      error.code = 'CIRCUIT_OPEN';
+      error.nextAttemptAt = breaker.getNextAttemptAt ? breaker.getNextAttemptAt() : null;
+      throw error;
+    }
     try {
-      return await fn();
+      const result = await runWithTimeout(fn, timeoutMs);
+      if (breaker && breaker.recordSuccess) {
+        breaker.recordSuccess();
+      }
+      return result;
     } catch (error) {
       lastError = error;
+      if (breaker && breaker.recordFailure) {
+        breaker.recordFailure(error);
+      }
       if (!shouldRetry(error) || i === attempts - 1) {
         throw error;
       }
       const delay = 2 ** i * 1000;
+      if (onRetry) {
+        onRetry({ attempt: i + 1, delay, error });
+      }
       await sleep(delay);
     }
   }

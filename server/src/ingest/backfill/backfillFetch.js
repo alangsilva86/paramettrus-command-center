@@ -1,4 +1,4 @@
-import { fetchZohoReport, withRetry } from '../zohoClient.js';
+import { fetchZohoReport, streamZohoReport } from '../zohoClient.js';
 
 /**
  * @param {string} field
@@ -13,12 +13,18 @@ export const buildBackfillCriteria = (field, start, end) => {
 /**
  * @param {Object} params
  * @param {string} params.criteria
+ * @param {Object} [params.retryOptions]
  * @returns {Promise<Object[]>}
  */
-export const fetchBackfillRecords = async ({ criteria }) => {
-  return withRetry(
-    () => fetchZohoReport({ criteria }),
-    3,
-    (error) => error?.code !== 'ZOHO_AUTH_401'
-  );
+export const fetchBackfillRecords = async ({ criteria, retryOptions } = {}) => {
+  return fetchZohoReport({ criteria, retryOptions });
+};
+
+/**
+ * @param {Object} params
+ * @param {string} params.criteria
+ * @param {Object} [params.retryOptions]
+ */
+export const streamBackfillRecords = ({ criteria, retryOptions } = {}) => {
+  return streamZohoReport({ criteria, retryOptions });
 };

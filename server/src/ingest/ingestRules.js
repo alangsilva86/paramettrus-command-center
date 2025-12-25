@@ -1,7 +1,7 @@
-export const getBackfillDedupKey = (normalized) =>
+export const getDedupKey = (normalized) =>
   normalized.zoho_record_id || normalized.contract_id || null;
 
-export const classifyBackfillRecord = (normalized) => {
+export const classifyNormalizedRecord = (normalized) => {
   if (!normalized.month_ref) {
     return {
       skip: true,

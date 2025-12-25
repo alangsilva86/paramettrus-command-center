@@ -1,16 +1,22 @@
 import { withClient } from '../../db.js';
 import { config } from '../../config.js';
+import { mapWithConcurrency } from '../../utils/concurrency.js';
 import { formatDate } from '../../utils/date.js';
 import { logError, logInfo, logSuccess, logWarn } from '../../utils/logger.js';
 import { finalizeIngestionRun, insertIngestionRun, upsertRawPayloadBatch } from '../ingestRepository.js';
-import { buildBackfillCriteria, fetchBackfillRecords } from './backfillFetch.js';
+import { buildIngestionBatchCache, persistNormalizedRecord } from '../ingestBatch.js';
+import { buildZohoRetryOptions, createZohoCircuitBreaker } from '../ingestRetry.js';
+import { classifyNormalizedRecord, getDedupKey, markDeduped } from '../ingestRules.js';
+import { buildBackfillCriteria, streamBackfillRecords } from './backfillFetch.js';
 import { normalizeBackfillRecord } from './backfillNormalize.js';
-import { buildBackfillBatchCache, persistNormalizedRecord } from './backfillPersist.js';
 import { buildBackfillRanges } from './backfillRanges.js';
-import { classifyBackfillRecord, getBackfillDedupKey, markDeduped } from './backfillRules.js';
 
 const SOURCE = 'zoho';
 const BACKFILL_BATCH_SIZE = Math.max(1, Number(config.ingest?.backfillBatchSize || 200));
+const BACKFILL_CONCURRENCY = Math.max(
+  1,
+  Number(config.ingest?.backfillConcurrency || config.ingest?.concurrency || 4)
+);
 
 const resolveDateField = (mode) => {
   if (mode === 'modified') return config.zohoFields.modifiedTime || 'Modified_Time';
@@ -34,12 +40,12 @@ const prepareBackfillBatch = (records, seenIds) => {
 
   for (const record of records) {
     const normalized = normalizeBackfillRecord(record);
-    const classification = classifyBackfillRecord(normalized);
+    const classification = classifyNormalizedRecord(normalized);
     invalid += classification.invalidCount;
     incomplete += classification.incompleteCount;
     if (classification.skip) continue;
 
-    const dedupKey = getBackfillDedupKey(normalized);
+    const dedupKey = getDedupKey(normalized);
     if (markDeduped(seenIds, dedupKey)) {
       duplicates += 1;
       continue;
@@ -106,6 +112,8 @@ export const runBackfill = async ({
     let rawSkipped = 0;
     const seenIds = new Set();
     const fetchedAt = new Date().toISOString();
+    const breaker = createZohoCircuitBreaker();
+    const retryOptions = buildZohoRetryOptions(breaker);
 
     try {
       for (const range of ranges) {
@@ -119,39 +127,50 @@ export const runBackfill = async ({
             criteria
           });
 
-          const records = await fetchBackfillRecords({ criteria });
-          fetchedCount += records.length;
+          for await (const records of streamBackfillRecords({ criteria, retryOptions })) {
+            fetchedCount += records.length;
 
-          const batches = chunkArray(records, BACKFILL_BATCH_SIZE);
-          for (const batch of batches) {
-            const prepared = prepareBackfillBatch(batch, seenIds);
-            invalidCount += prepared.invalid;
-            incompleteCount += prepared.incomplete;
-            duplicatesCount += prepared.duplicates;
+            const batches = chunkArray(records, BACKFILL_BATCH_SIZE);
+            for (const batch of batches) {
+              const prepared = prepareBackfillBatch(batch, seenIds);
+              invalidCount += prepared.invalid;
+              incompleteCount += prepared.incomplete;
+              duplicatesCount += prepared.duplicates;
 
-            if (!prepared.entries.length) continue;
-            if (dryRun) continue;
+              if (!prepared.entries.length) continue;
+              if (dryRun) continue;
 
-            const caches = await buildBackfillBatchCache(client, prepared.entries);
-            const rawResult = await upsertRawPayloadBatch({
-              client,
-              items: buildRawPayloadItems(prepared.entries),
-              fetchedAt,
-              source: SOURCE
-            });
-            rawInserted += rawResult.inserted;
-            rawUpdated += rawResult.updated;
-            rawSkipped += rawResult.skipped;
+              const [caches, rawResult] = await Promise.all([
+                buildIngestionBatchCache(client, prepared.entries),
+                upsertRawPayloadBatch({
+                  client,
+                  items: buildRawPayloadItems(prepared.entries),
+                  fetchedAt,
+                  source: SOURCE
+                })
+              ]);
+              rawInserted += rawResult.inserted;
+              rawUpdated += rawResult.updated;
+              rawSkipped += rawResult.skipped;
 
-            for (const entry of prepared.entries) {
-              const persistResult = await persistNormalizedRecord({
-                client,
-                normalized: entry.normalized,
-                caches
-              });
-              insertedNormCount += persistResult.insertedNorm;
-              updatedNormCount += persistResult.updatedNorm;
-              duplicatesCount += persistResult.duplicates;
+              const persistResults = await mapWithConcurrency(
+                prepared.entries,
+                BACKFILL_CONCURRENCY,
+                (entry) =>
+                  persistNormalizedRecord({
+                    client,
+                    normalized: entry.normalized,
+                    caches
+                  }),
+                {
+                  keyFn: (entry) => entry.normalized.row_hash || getDedupKey(entry.normalized)
+                }
+              );
+              for (const result of persistResults) {
+                insertedNormCount += result.insertedNorm;
+                updatedNormCount += result.updatedNorm;
+                duplicatesCount += result.duplicates;
+              }
             }
           }
         }
